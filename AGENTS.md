@@ -14,7 +14,7 @@ Keep these true. They are the piece, not implementation details.
 
 1. **No identity is given.** `SEED` (once.mjs:29) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `VOICE_INSTRUCTIONS` (once.mjs:66) is literal protocol text, never identity; `tests/core.test.mjs` asserts both are exact and identity-free.
 2. **It knows only what reaches it.** Never fetch Slack history, never inspect repositories, CI, GitHub, or the filesystem, never browse. Its universe is: new Slack events, time, its own memory, its own source. What it knows about the work, it was told.
-3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:313) erases them. A successful birth deletes the launcher itself (once.mjs:467); a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
+3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:321) erases them. A successful birth deletes the launcher itself (once.mjs:475); a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
 4. **"Nothing is saved" is not "nothing is retained."** The OS may page memory, Slack and the model provider retain what their products retain. Never describe the program as more private than it is; see README for the exact boundary.
 5. **Speech is the only power that matters.** It influences the team by talking, replying, reacting — a member of the team, not a supervisor. It may notice silence and act on its own timer. Never give it management, surveillance, or intervention powers.
 6. **Mechanics are described literally, never as metaphor.** The action schema is speak (optionally with `reply_to`), react, name, memory, wake. Do not frame anything anthropomorphically ("sleep", "dream", "feel") in prompts or code. If the creature adopts such metaphors, they came from it.
@@ -39,15 +39,15 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 
 - `SEED` (29), `MANIFEST` (36), `VOICE_INSTRUCTIONS` (66), `opencodeConfig` (68) — the initial prompt, Slack app definition, and harness-stripping constants
 - `prompt` / `askUntil` (74/93) — interactive, plain-language setup
-- `pathCandidates` / `findCommand` / `discoverVoices` (102/110/117) — PATH inspection only, never executes a CLI to discover it
-- `run` / `windowsQuote` (133/126) — child execution; human and Slack text always goes over stdin, never interpolated
-- `mindPrompt` / `parseAction` (155/171) — the entire protocol: one bounded JSON action
-- `askVoice` (196) — per-CLI model and invocation flags, each voice stripped of its own agent harness
-- `Presence` (217) — perception, batching, actions, memory, a displayed name chosen once, one timer, death
-- `findNpmCli` / `childMain` (321/336) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
-- `launcherMain` (373) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion
+- `pathCandidates` / `findCommand` / `discoverVoices` (102/110/123) — PATH inspection only, never executes a CLI to discover it; `VOICE_COMMANDS` (117) prefers `opencode-cli` over the desktop `opencode`
+- `run` / `windowsQuote` (141/134) — child execution; human and Slack text always goes over stdin, never interpolated
+- `mindPrompt` / `parseAction` (163/179) — the entire protocol: one bounded JSON action
+- `askVoice` (204) — per-CLI model and invocation flags, each voice stripped of its own agent harness
+- `Presence` (225) — perception, batching, actions, memory, a displayed name chosen once, one timer, death
+- `findNpmCli` / `childMain` (329/344) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
+- `launcherMain` (381) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion
 
-Timing constants are physics: 2500 ms debounce (255), 5000 ms settle (310), 32 pending events (251), 256 seen ids (239), 64 references (243), 180 s model timeout (213). Tune deliberately; never grow them into queues or history.
+Timing constants are physics: 2500 ms debounce (263), 5000 ms settle (318), 32 pending events (259), 256 seen ids (247), 64 references (251), 180 s model timeout (221). Tune deliberately; never grow them into queues or history.
 
 ## Extending it
 

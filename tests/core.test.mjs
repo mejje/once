@@ -161,19 +161,31 @@ test('findCommand and discoverVoices inspect PATH without invoking commands', as
   const dir = await mkdtemp(path.join(tmpdir(), 'once-voice-test-'));
   const old = process.env.PATH;
   const oldExt = process.env.PATHEXT;
+  const cliFile = path.join(dir, process.platform === 'win32' ? 'opencode-cli.cmd' : 'opencode-cli');
+  const uiFile = path.join(dir, process.platform === 'win32' ? 'opencode.cmd' : 'opencode');
   try {
     process.env.PATH = dir;
     if (process.platform === 'win32') {
       process.env.PATHEXT = '.CMD';
       await writeFile(path.join(dir, 'claude.cmd'), '@echo off\r\n');
+      await writeFile(cliFile, '@echo off\r\n');
+      await writeFile(uiFile, '@echo off\r\n');
     } else {
       await writeFile(path.join(dir, 'claude'), '#!/bin/sh\nexit 0\n');
+      await writeFile(cliFile, '#!/bin/sh\nexit 0\n');
+      await writeFile(uiFile, '#!/bin/sh\nexit 0\n');
       await chmod(path.join(dir, 'claude'), 0o755);
+      await chmod(cliFile, 0o755);
+      await chmod(uiFile, 0o755);
     }
     assert.ok(await findCommand('claude'));
     const voices = await discoverVoices();
     assert.ok(voices.claude);
     assert.equal(voices.codex, undefined);
+    assert.ok(voices.opencode.includes('opencode-cli'));
+    await rm(cliFile);
+    const fallback = await discoverVoices();
+    assert.ok(fallback.opencode.includes('opencode'));
   } finally {
     process.env.PATH = old;
     process.env.PATHEXT = oldExt;

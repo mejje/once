@@ -54,7 +54,7 @@ There is no application database, state file, model API key, daemon, Docker cont
 - one already installed and authenticated local model CLI (recent enough to support its harness-stripping flags):
   - `claude`
   - `codex`
-  - `opencode`
+  - `opencode-cli` or `opencode` (the CLI is preferred when the desktop UI is also installed)
 - permission to create/install a Slack app in the workspace
 
 The model side uses your existing CLI login. `once` does **not** ask for a model API key.
@@ -88,7 +88,7 @@ There are no command-line options and no numbered menus.
 
 The launcher talks you through the setup in plain language. It will:
 
-1. discover `claude`, `codex`, and `opencode` on your `PATH`
+1. discover `claude`, `codex`, and the OpenCode CLI (`opencode-cli`, falling back to `opencode`) on your `PATH`
 2. ask which available CLI it should think through if there is more than one
 3. ask which model it should think through (press Enter to use the CLI's configured model; Claude offers `sonnet` as its default)
 4. explain how to create a Slack app from the manifest it prints

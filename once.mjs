@@ -114,11 +114,19 @@ async function findCommand(name) {
   return null;
 }
 
+const VOICE_COMMANDS = {
+  claude: ['claude'],
+  codex: ['codex'],
+  opencode: ['opencode-cli', 'opencode'],
+};
+
 async function discoverVoices() {
   const found = {};
-  for (const name of ['claude', 'codex', 'opencode']) {
-    const command = await findCommand(name);
-    if (command) found[name] = command;
+  for (const [voice, candidates] of Object.entries(VOICE_COMMANDS)) {
+    for (const name of candidates) {
+      const command = await findCommand(name);
+      if (command) { found[voice] = command; break; }
+    }
   }
   return found;
 }
