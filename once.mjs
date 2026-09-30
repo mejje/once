@@ -17,7 +17,7 @@
 
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { mkdtemp, copyFile, rm, unlink, realpath, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, writeFile, rm, unlink, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -61,6 +61,10 @@ settings:
   socket_mode_enabled: true
   org_deploy_enabled: false
   token_rotation_enabled: false`;
+
+const VOICE_INSTRUCTIONS = 'Respond to each message with exactly one JSON object, following the format described in the message.';
+const OPENCODE_DENIED = ['read', 'edit', 'glob', 'grep', 'list', 'bash', 'task', 'external_directory', 'todowrite', 'webfetch', 'websearch', 'lsp', 'skill', 'question'];
+const OPENCODE_CONFIG = JSON.stringify({ agent: { once: { description: 'Speaks one bounded JSON action.', mode: 'primary', prompt: VOICE_INSTRUCTIONS, permission: Object.fromEntries(OPENCODE_DENIED.map(name => [name, 'deny'])) } } });
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const bounded = (map, n) => { while (map.size > n) map.delete(map.keys().next().value); };
@@ -120,6 +124,7 @@ async function discoverVoices() {
 
 function windowsQuote(value) {
   // Used only for trusted, program-authored arguments. Human/Slack text is sent over stdin.
+  if (value === '') return '""';
   if (!/[\s"&|<>^()%!]/.test(value)) return value;
   return `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1')}"`;
 }
@@ -185,17 +190,19 @@ function parseAction(text) {
 
 async function askVoice(config, state, runner = run) {
   const message = mindPrompt(state);
-  let args;
+  let args, env = process.env;
   if (config.voice === 'claude') {
     args = ['-p', 'Respond only with the JSON action described by the input.', '--output-format', 'text',
-      '--max-turns', '1', '--permission-mode', 'plan',
-      '--disallowedTools', 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task'];
+      '--max-turns', '1', '--bare', '--system-prompt', VOICE_INSTRUCTIONS,
+      '--tools', '', '--no-session-persistence'];
   } else if (config.voice === 'codex') {
-    args = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'];
+    const instructions = config.instructionsFile.replace(/\\/g, '/');
+    args = ['-c', `model_instructions_file='${instructions}'`, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'];
   } else {
-    args = ['run'];
+    args = ['--pure', 'run', '--agent', 'once'];
+    env = { ...process.env, OPENCODE_CONFIG_CONTENT: OPENCODE_CONFIG, OPENCODE_DISABLE_CLAUDE_CODE: 'true' };
   }
-  const { out } = await runner(config.voiceCommand, args, { cwd: config.emptyCwd, input: message, timeout: 180000 });
+  const { out } = await runner(config.voiceCommand, args, { cwd: config.emptyCwd, env, input: message, timeout: 180000 });
   return parseAction(out);
 }
 
@@ -408,8 +415,10 @@ async function launcherMain() {
   const root = await mkdtemp(path.join(tmpdir(), 'one-presence-'));
   const childFile = path.join(root, 'world.mjs');
   const emptyCwd = path.join(root, 'room');
-  await import('node:fs/promises').then(fs => fs.mkdir(emptyCwd));
+  await mkdir(emptyCwd);
   await copyFile(HERE, childFile);
+  const instructionsFile = path.join(root, 'codex-instructions.txt');
+  if (voice === 'codex') await writeFile(instructionsFile, VOICE_INSTRUCTIONS);
   try {
     console.log('\nPreparing a temporary room…');
     await run(process.execPath, [npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--loglevel=error',
@@ -421,7 +430,7 @@ async function launcherMain() {
       env: { ...process.env, ONCE_PRESENCE_CHILD: '1', NODE_DISABLE_COMPILE_CACHE: '1' },
       stdio: ['pipe', 'pipe', 'inherit'],
     });
-    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd }) + '\n');
+    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
       new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); })),
@@ -456,6 +465,7 @@ async function launcherMain() {
 export {
   SEED,
   MANIFEST,
+  VOICE_INSTRUCTIONS,
   Presence,
   askVoice,
   bounded,

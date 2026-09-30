@@ -12,9 +12,9 @@ The quality of this project lives in what it refuses to be. Most changes that ma
 
 Keep these true. They are the piece, not implementation details.
 
-1. **No identity is given.** `SEED` (once.mjs:29) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `tests/core.test.mjs` asserts the seed is exact and identity-free.
+1. **No identity is given.** `SEED` (once.mjs:29) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `VOICE_INSTRUCTIONS` (once.mjs:65) is literal protocol text, never identity; `tests/core.test.mjs` asserts both are exact and identity-free.
 2. **It knows only what reaches it.** Never fetch Slack history, never inspect repositories, CI, GitHub, or the filesystem, never browse. Its universe is: new Slack events, time, its own memory, its own source. What it knows about the work, it was told.
-3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:294) erases them. A successful birth deletes the launcher itself (once.mjs:436); a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
+3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:301) erases them. A successful birth deletes the launcher itself (once.mjs:445); a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
 4. **"Nothing is saved" is not "nothing is retained."** The OS may page memory, Slack and the model provider retain what their products retain. Never describe the program as more private than it is; see README for the exact boundary.
 5. **Speech is the only power that matters.** It influences the team by talking, replying, reacting — a member of the team, not a supervisor. It may notice silence and act on its own timer. Never give it management, surveillance, or intervention powers.
 6. **Mechanics are described literally, never as metaphor.** The action schema is speak (optionally with `reply_to`), react, memory, wake. Do not frame anything anthropomorphically ("sleep", "dream", "feel") in prompts or code. If the creature adopts such metaphors, they came from it.
@@ -25,8 +25,8 @@ Keep these true. They are the piece, not implementation details.
 Do not weaken or delete these tests to make a change pass. If a change deliberately alters behavior, update the test, this file, and README together.
 
 - no `conversations.history` / `conversations.replies` (architecture.test.mjs)
-- no `writeFile` / `appendFile` / `createWriteStream` / `state.json` / sqlite / redis (architecture.test.mjs)
-- Claude: tools disabled with `--disallowedTools` and `--permission-mode plan`; Codex: `--sandbox read-only`; all voices receive the prompt on stdin (voice.test.mjs, core.test.mjs)
+- no persistence: `appendFile` / `createWriteStream` / `state.json` / sqlite / redis are forbidden; the only `writeFile` creates the Codex instructions file in the temp room (architecture.test.mjs)
+- voices are stripped of their own harness: Claude `--bare` + replacement system prompt + `--tools ""`; Codex `--sandbox read-only` + `model_instructions_file`; OpenCode `--pure` + a generated tool-denying agent; all receive the prompt on stdin (voice.test.mjs, core.test.mjs)
 - temp room via `mkdtemp('one-presence-')` and removal on exit (architecture.test.mjs)
 - self-deletion happens after `READY`, before `GO` (architecture.test.mjs)
 - no automatic restart (architecture.test.mjs)
@@ -37,17 +37,17 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 
 ## Map of once.mjs
 
-- `SEED` (29), `MANIFEST` (36) — the initial prompt and Slack app definition
-- `prompt` / `askUntil` (69/88) — interactive, plain-language setup
-- `pathCandidates` / `findCommand` / `discoverVoices` (97/105/112) — PATH inspection only, never executes a CLI to discover it
-- `run` / `windowsQuote` (127/121) — child execution; human and Slack text always goes over stdin, never interpolated
-- `mindPrompt` / `parseAction` (149/163) — the entire protocol: one bounded JSON action
-- `askVoice` (186) — per-CLI invocation flags
-- `Presence` (202) — perception, batching, actions, memory, one timer, death
-- `findNpmCli` / `childMain` (302/317) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
-- `launcherMain` (354) — the ritual: voice selection, Slack onboarding, temp room, self-deletion
+- `SEED` (29), `MANIFEST` (36), `VOICE_INSTRUCTIONS` (65), `OPENCODE_CONFIG` (67) — the initial prompt, Slack app definition, and harness-stripping constants
+- `prompt` / `askUntil` (73/92) — interactive, plain-language setup
+- `pathCandidates` / `findCommand` / `discoverVoices` (101/109/116) — PATH inspection only, never executes a CLI to discover it
+- `run` / `windowsQuote` (132/125) — child execution; human and Slack text always goes over stdin, never interpolated
+- `mindPrompt` / `parseAction` (154/168) — the entire protocol: one bounded JSON action
+- `askVoice` (191) — per-CLI invocation flags, each voice stripped of its own agent harness
+- `Presence` (209) — perception, batching, actions, memory, one timer, death
+- `findNpmCli` / `childMain` (309/324) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
+- `launcherMain` (361) — the ritual: voice selection, Slack onboarding, temp room, self-deletion
 
-Timing constants are physics: 2500 ms debounce (239), 5000 ms settle (291), 32 pending events (235), 256 seen ids (223), 64 references (227), 180 s model timeout (198). Tune deliberately; never grow them into queues or history.
+Timing constants are physics: 2500 ms debounce (246), 5000 ms settle (298), 32 pending events (242), 256 seen ids (230), 64 references (234), 180 s model timeout (205). Tune deliberately; never grow them into queues or history.
 
 ## Extending it
 

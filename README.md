@@ -51,7 +51,7 @@ There is no application database, state file, model API key, daemon, Docker cont
 
 - macOS, Windows, or Linux
 - Node.js 22 or newer, with npm available
-- one already installed and authenticated local model CLI:
+- one already installed and authenticated local model CLI (recent enough to support its harness-stripping flags):
   - `claude`
   - `codex`
   - `opencode`
@@ -130,9 +130,13 @@ choose/cancel a future activation
 
 A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent.
 
-The local model CLI is invoked non-interactively. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command. Mentions such as `<!channel>` in its speech are escaped, so it cannot ping the whole room.
+The local model CLI is invoked non-interactively with its own agent harness stripped. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command. Mentions such as `<!channel>` in its speech are escaped, so it cannot ping the whole room.
 
-For Claude Code, editing/shell/web tools are disabled for the invocation. Codex is invoked in a read-only sandbox. OpenCode is invoked through `opencode run`; the presence itself still exposes no filesystem or shell action in its output protocol.
+- Claude Code runs bare, with its system prompt replaced by one literal protocol sentence, no built-in tools, and no session persistence.
+- Codex runs in a read-only sandbox with its built-in instructions replaced by a one-line protocol file.
+- OpenCode runs with its plugins disabled and a generated agent that denies every tool.
+
+That protocol file for Codex lives in the temporary room, contains no private state, and is removed with the room. The presence itself exposes no filesystem or shell action in its output protocol.
 
 ## End
 
@@ -168,9 +172,7 @@ The suite covers:
 - malformed/oversized model actions
 - CLI discovery
 - stdin-safe local CLI invocation
-- Claude Code invocation restrictions
-- Codex read-only invocation
-- OpenCode invocation
+- harness-stripped invocation of Claude Code, Codex, and OpenCode
 - Slack event filtering and deduplication
 - hearing messages and reactions
 - speaking, replying, and reacting

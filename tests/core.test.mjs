@@ -7,6 +7,7 @@ import path from 'node:path';
 import {
   SEED,
   MANIFEST,
+  VOICE_INSTRUCTIONS,
   bounded,
   cleanError,
   discoverVoices,
@@ -26,6 +27,11 @@ What matters to them may come to matter to you.
 You may change.
 You have not been told what to become.`);
   assert.doesNotMatch(SEED, /raven|rook|coach|manager|assistant|identity/i);
+});
+
+test('voice instructions are literal protocol text without identity', () => {
+  assert.equal(VOICE_INSTRUCTIONS, 'Respond to each message with exactly one JSON object, following the format described in the message.');
+  assert.doesNotMatch(VOICE_INSTRUCTIONS, /assistant|personality|character|tone|you are/i);
 });
 
 test('manifest enables Socket Mode and the required channel capabilities', () => {
@@ -111,6 +117,7 @@ test('cleanError prefers Slack-style data.error and removes newlines', () => {
 test('windowsQuote leaves simple trusted arguments alone', () => {
   assert.equal(windowsQuote('hello-world'), 'hello-world');
   assert.equal(windowsQuote('two words'), '"two words"');
+  assert.equal(windowsQuote(''), '""');
 });
 
 test('pathCandidates uses PATH', () => {

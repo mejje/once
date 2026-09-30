@@ -10,17 +10,22 @@ test('the creature does not fetch Slack history on birth', () => {
 });
 
 test('the model side has no arbitrary browsing or shell tool surface', () => {
-  assert.match(source, /--disallowedTools[^\n]*Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task/);
+  assert.match(source, /'--bare'/);
+  assert.match(source, /'--system-prompt', VOICE_INSTRUCTIONS/);
+  assert.match(source, /'--tools', ''/);
   assert.match(source, /--sandbox', 'read-only'/);
+  assert.match(source, /'--pure', 'run', '--agent', 'once'/);
+  assert.match(source, /permission: Object\.fromEntries/);
   assert.doesNotMatch(source, /https?:\/\/[^'"`\s]+.*incoming/);
 });
 
 test('private memory is not serialized to a state file', () => {
   assert.doesNotMatch(source, /state\.json/i);
-  assert.doesNotMatch(source, /writeFile\s*\(/);
   assert.doesNotMatch(source, /appendFile\s*\(/);
   assert.doesNotMatch(source, /createWriteStream\s*\(/);
   assert.doesNotMatch(source, /sqlite|leveldb|redis/i);
+  const writes = source.match(/writeFile\s*\([^)]*/g) ?? [];
+  assert.deepEqual(writes, ['writeFile(instructionsFile, VOICE_INSTRUCTIONS']);
 });
 
 test('the launcher uses a temporary room and removes it on normal exit', () => {
