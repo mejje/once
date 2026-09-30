@@ -451,6 +451,7 @@ async function launcherMain() {
       env: { ...process.env, ONCE_PRESENCE_CHILD: '1', NODE_DISABLE_COMPILE_CACHE: '1' },
       stdio: ['pipe', 'pipe', 'inherit'],
     });
+    child.stdin.on('error', () => {});
     child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
@@ -471,9 +472,8 @@ async function launcherMain() {
 
     child.stdin.write('GO\n');
     console.log('\nIt is here.');
-    console.log('This launcher has deleted itself. Nothing of its private memory is being saved.');
-    console.log('Press Enter when you want this lifetime to end.\n');
-    await prompt('');
+    console.log('This launcher has deleted itself. Nothing of its private memory is being saved.\n');
+    await new Promise(resolve => process.once('SIGINT', resolve));
     child.stdin.end('STOP\n');
     await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(4000)]);
     if (child.exitCode === null) child.kill();

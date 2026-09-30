@@ -146,9 +146,7 @@ The chosen model, if any, is passed to the CLI on every invocation; otherwise th
 
 ## End
 
-While it is running, press Enter in the terminal that launched it.
-
-The process stops, clears its in-memory state, and removes the temporary program directory.
+When the process ends, it clears its in-memory state and removes the temporary program directory.
 
 There is no automatic restart.
 
