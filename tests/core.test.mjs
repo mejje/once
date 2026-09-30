@@ -59,6 +59,8 @@ test('mindPrompt exposes only current state and action schema', () => {
   assert.match(prompt, /hello/);
   assert.match(prompt, /"name"/);
   assert.match(prompt, /does not have to be chosen now/);
+  assert.match(prompt, /making you active now/);
+  assert.match(prompt, /references for reply_to and react/);
   assert.match(prompt, /wake_in_minutes/);
   assert.match(prompt, /complete replacement memory/);
   assert.match(prompt, /remaining silent and changing nothing/);
@@ -103,7 +105,7 @@ test('parseAction validates all supported actions', () => {
 });
 
 test('parseAction rejects unknown powers', () => {
-  assert.throws(() => parseAction('{"browse":"https://example.com"}'), /unknown action/);
+  assert.throws(() => parseAction('{"browse":"https://example.com"}'), /unknown action: \{"browse":"https/);
 });
 
 test('parseAction rejects oversized speech', () => {
@@ -124,8 +126,11 @@ test('parseAction constrains the displayed name', () => {
 
 test('parseAction constrains future activations', () => {
   assert.equal(parseAction('{"wake_in_minutes":null}').wake_in_minutes, null);
+  assert.equal(parseAction('{"wake_in_minutes":"5"}').wake_in_minutes, 5);
+  assert.equal(parseAction('{"wake_in_minutes":0.25}').wake_in_minutes, 0.25);
   assert.throws(() => parseAction('{"wake_in_minutes":0}'), /Activation time is invalid/);
   assert.throws(() => parseAction('{"wake_in_minutes":2881}'), /Activation time is invalid/);
+  assert.throws(() => parseAction('{"wake_in_minutes":"soon"}'), /Activation time is invalid/);
 });
 
 test('parseAction constrains emoji syntax', () => {

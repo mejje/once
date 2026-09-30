@@ -173,7 +173,7 @@ Your entire private memory is the value of memory above. Rewrite it only if some
 Respond with exactly one JSON object and nothing else. Every field is optional:
 {"speak":"text for the shared Slack channel","reply_to":"heard message id, to continue its thread","react":{"message_id":"heard message id","emoji":"emoji_name_without_colons"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
 
-wake_in_minutes may also be null to cancel a future activation. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
+wake_in_minutes may also be null to cancel a future activation. A pending activation does not stop anything that reaches you from making you active now. Ids are references for reply_to and react; who people are comes from what they say. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
 }
 
 function parseAction(text) {
@@ -184,18 +184,23 @@ function parseAction(text) {
   try { action = JSON.parse(value); }
   catch {
     const start = value.indexOf('{'), end = value.lastIndexOf('}');
-    if (start < 0 || end <= start) throw new Error('The chosen CLI did not return an action.');
+    if (start < 0 || end <= start) throw new Error(`The chosen CLI did not return an action: ${value.slice(0, 160)}`);
     action = JSON.parse(value.slice(start, end + 1));
   }
-  if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('The chosen CLI returned an invalid action.');
+  if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error(`The chosen CLI returned an invalid action: ${value.slice(0, 160)}`);
   const allowed = new Set(['speak', 'reply_to', 'react', 'name', 'memory', 'wake_in_minutes']);
-  if (Object.keys(action).some(k => !allowed.has(k))) throw new Error('The chosen CLI returned an unknown action.');
+  const unknown = Object.keys(action).filter(key => !allowed.has(key));
+  if (unknown.length) throw new Error(`The chosen CLI returned an unknown action: ${JSON.stringify(action).slice(0, 160)}`);
   if ('speak' in action && (typeof action.speak !== 'string' || action.speak.length > 2000)) throw new Error('Speech is invalid.');
   if ('name' in action && action.name !== null &&
       (typeof action.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(action.name))) throw new Error('Name is invalid.');
   if ('memory' in action && (typeof action.memory !== 'string' || action.memory.length > 6000)) throw new Error('Memory is invalid.');
-  if ('wake_in_minutes' in action && action.wake_in_minutes !== null &&
-      (!Number.isFinite(action.wake_in_minutes) || action.wake_in_minutes < 1 || action.wake_in_minutes > 2880)) throw new Error('Activation time is invalid.');
+  if ('wake_in_minutes' in action && action.wake_in_minutes !== null) {
+    const raw = action.wake_in_minutes;
+    if (typeof raw === 'string' && raw.trim()) action.wake_in_minutes = Number(raw);
+    if (!Number.isFinite(action.wake_in_minutes) || action.wake_in_minutes <= 0 || action.wake_in_minutes > 2880)
+      throw new Error(`Activation time is invalid: ${JSON.stringify(raw).slice(0, 60)}`);
+  }
   if ('react' in action) {
     if (!action.react || typeof action.react.message_id !== 'string' || typeof action.react.emoji !== 'string') throw new Error(`Reaction is invalid: ${JSON.stringify(action.react).slice(0, 120)}`);
     action.react.emoji = action.react.emoji.replace(/^:+|:+$/g, '');
@@ -238,7 +243,7 @@ class Presence {
   references = new Map();
   seen = new Set();
 
-  constructor(config, app) { this.config = config; this.app = app; }
+  constructor(config, app) { this.config = config; this.app = app; this.trace = config.dev ? console.log : () => {}; }
 
   hear(event, eventId) {
     const timestamp = event.event_ts ?? event.ts;
@@ -294,7 +299,7 @@ class Presence {
       }
     }
     if (action.speak?.trim()) {
-      if (action.reply_to && !this.references.has(action.reply_to)) throw new Error('Unknown reply target.');
+      if (action.reply_to && !this.references.has(action.reply_to)) throw new Error(`Unknown reply target: ${action.reply_to}`);
       const thread = action.reply_to ? this.references.get(action.reply_to) : null;
       const result = await this.app.client.chat.postMessage({
         channel: this.config.channel,
@@ -307,7 +312,7 @@ class Presence {
       bounded(this.references, 64);
     }
     if (action.react) {
-      if (!this.references.has(action.react.message_id)) throw new Error('Unknown reaction target.');
+      if (!this.references.has(action.react.message_id)) throw new Error(`Unknown reaction target: ${action.react.message_id}`);
       try { await this.app.client.reactions.add({ channel: this.config.channel, timestamp: action.react.message_id, name: action.react.emoji }); }
       catch (e) { console.error(`Reaction failed: ${cleanError(e)}`); }
     }
@@ -317,7 +322,14 @@ class Presence {
     if (!this.alive || this.busy || !this.pending.length) return;
     this.busy = true;
     const incoming = this.pending.splice(0);
-    try { await this.apply(await this.think(incoming)); }
+    this.trace(`${incoming.length} event${incoming.length === 1 ? '' : 's'} reached it.`);
+    try {
+      const action = await this.think(incoming);
+      await this.apply(action);
+      this.trace(action.speak?.trim() ? 'It spoke.' : 'It stayed silent.');
+      if (typeof action.wake_in_minutes === 'number') this.trace(`It will become active again in ${action.wake_in_minutes} minute${action.wake_in_minutes === 1 ? '' : 's'}.`);
+      if (action.wake_in_minutes === null) this.trace('It cancelled its activation.');
+    }
     catch (e) { console.error(`A thought failed: ${cleanError(e)}`); }
     finally { this.busy = false; this.arrange(5000); }
   }
@@ -495,10 +507,10 @@ async function launcherMain() {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     child.stdin.on('error', () => {});
-    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model }) + '\n');
+    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model, dev: Boolean(dev) }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
-      new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); })),
+      new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); else console.log(line); })),
       new Promise(resolve => child.once('exit', () => resolve(false))),
       sleep(240000).then(() => false),
     ]);

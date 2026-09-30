@@ -93,6 +93,16 @@ test('apply can create and cancel an in-memory activation', async () => {
   presence.die();
 });
 
+test('incoming events schedule a turn while an activation is pending', async () => {
+  const { presence } = harness();
+  presence.arrange = Presence.prototype.arrange;
+  await presence.apply({ wake_in_minutes: 60 });
+  presence.hear({ type: 'message', channel: 'C12345678', user: 'U1', ts: '10.1', text: 'hello' }, 'E1');
+  assert.ok(presence.turnTimer);
+  clearTimeout(presence.turnTimer);
+  presence.die();
+});
+
 test('apply sets the displayed name only once', async () => {
   const { presence } = harness();
   await presence.apply({ name: 'Ash' });
@@ -161,6 +171,12 @@ test('turn consumes current events and applies one action', async () => {
   assert.equal(presence.memory, 'hello mattered');
   assert.equal(sent[0].text, 'heard');
   presence.die();
+});
+
+test('turn tracing is enabled only in developer mode', () => {
+  const app = { client: {} };
+  assert.notEqual(new Presence({ channel: 'C12345678', botUser: 'UBOT' }, app).trace, console.log);
+  assert.equal(new Presence({ channel: 'C12345678', botUser: 'UBOT', dev: true }, app).trace, console.log);
 });
 
 test('die destroys private in-memory state and intentions', async () => {
