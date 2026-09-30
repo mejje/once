@@ -183,12 +183,6 @@ test('turn consumes current events and applies one action', async () => {
   presence.die();
 });
 
-test('turn tracing is enabled only in developer mode', () => {
-  const app = { client: {} };
-  assert.notEqual(new Presence({ channel: 'C12345678', botUser: 'UBOT' }, app).trace, console.log);
-  assert.equal(new Presence({ channel: 'C12345678', botUser: 'UBOT', dev: true }, app).trace, console.log);
-});
-
 test('die destroys private in-memory state and intentions', async () => {
   const { presence } = harness();
   presence.memory = 'everything';

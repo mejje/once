@@ -246,7 +246,7 @@ class Presence {
   references = new Map();
   seen = new Set();
 
-  constructor(config, app) { this.config = config; this.app = app; this.trace = config.dev ? console.log : () => {}; }
+  constructor(config, app) { this.config = config; this.app = app; }
 
   hear(event, eventId) {
     const timestamp = event.event_ts ?? event.ts;
@@ -327,14 +327,7 @@ class Presence {
     if (!this.alive || this.busy || !this.pending.length) return;
     this.busy = true;
     const incoming = this.pending.splice(0);
-    this.trace(`${incoming.length} event${incoming.length === 1 ? '' : 's'} reached it.`);
-    try {
-      const action = await this.think(incoming);
-      await this.apply(action);
-      this.trace(action.speak?.trim() ? 'It spoke.' : 'It stayed silent.');
-      if (typeof action.wake_in_minutes === 'number') this.trace(`It will become active again in ${action.wake_in_minutes} minute${action.wake_in_minutes === 1 ? '' : 's'}.`);
-      if (action.wake_in_minutes === null) this.trace('It cancelled its activation.');
-    }
+    try { await this.apply(await this.think(incoming)); }
     catch (e) { console.error(`A thought failed: ${cleanError(e)}`); }
     finally { this.busy = false; this.arrange(5000); }
   }
@@ -512,10 +505,10 @@ async function launcherMain() {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     child.stdin.on('error', () => {});
-    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model, dev: Boolean(dev) }) + '\n');
+    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
-      new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); else console.log(line); })),
+      new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); })),
       new Promise(resolve => child.once('exit', () => resolve(false))),
       sleep(240000).then(() => false),
     ]);
