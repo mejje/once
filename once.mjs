@@ -37,15 +37,16 @@ const MANIFEST = `_metadata:
   major_version: 1
   minor_version: 1
 display_information:
-  name: presence
+  name: once
 features:
   bot_user:
-    display_name: presence
+    display_name: once
     always_online: false
 oauth_config:
   scopes:
     bot:
       - chat:write
+      - chat:write.customize
       - channels:history
       - channels:read
       - groups:history
@@ -152,6 +153,8 @@ async function run(command, args, { cwd, input = '', timeout = 120000, env = pro
 }
 
 function mindPrompt(state) {
+  const nameField = state.name ? '' : '"name":"the one name your messages will be shown under",';
+  const nameNote = state.name ? '' : ' The name can be chosen only once and then stays.';
   return `${SEED}
 
 This is what reaches you now:
@@ -160,9 +163,9 @@ ${JSON.stringify(state)}
 Your entire private memory is the value of memory above. Rewrite it only if something should remain with you.
 
 Respond with exactly one JSON object and nothing else. Every field is optional:
-{"speak":"text for the shared Slack channel","reply_to":"heard message id","react":{"message_id":"heard message id","emoji":"emoji_name"},"memory":"your complete replacement memory","wake_in_minutes":30}
+{"speak":"text for the shared Slack channel","reply_to":"heard message id","react":{"message_id":"heard message id","emoji":"emoji_name"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
 
-wake_in_minutes may also be null to cancel a future activation. Omitting it keeps the existing activation. Omitting memory keeps your memory unchanged. An empty object means remaining silent and changing nothing.`;
+wake_in_minutes may also be null to cancel a future activation. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
 }
 
 function parseAction(text) {
@@ -177,9 +180,11 @@ function parseAction(text) {
     action = JSON.parse(value.slice(start, end + 1));
   }
   if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error('The chosen CLI returned an invalid action.');
-  const allowed = new Set(['speak', 'reply_to', 'react', 'memory', 'wake_in_minutes']);
+  const allowed = new Set(['speak', 'reply_to', 'react', 'name', 'memory', 'wake_in_minutes']);
   if (Object.keys(action).some(k => !allowed.has(k))) throw new Error('The chosen CLI returned an unknown action.');
   if ('speak' in action && (typeof action.speak !== 'string' || action.speak.length > 2000)) throw new Error('Speech is invalid.');
+  if ('name' in action && action.name !== null &&
+      (typeof action.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(action.name))) throw new Error('Name is invalid.');
   if ('memory' in action && (typeof action.memory !== 'string' || action.memory.length > 6000)) throw new Error('Memory is invalid.');
   if ('wake_in_minutes' in action && action.wake_in_minutes !== null &&
       (!Number.isFinite(action.wake_in_minutes) || action.wake_in_minutes < 1 || action.wake_in_minutes > 2880)) throw new Error('Activation time is invalid.');
@@ -211,6 +216,7 @@ async function askVoice(config, state, runner = run) {
 
 class Presence {
   memory = '';
+  name = '';
   pending = [];
   wakeAt = null;
   wakeTimer = null;
@@ -255,6 +261,7 @@ class Presence {
     const state = {
       time: new Date().toISOString(),
       memory: this.memory,
+      name: this.name,
       next_activation: this.wakeAt,
       incoming: events,
     };
@@ -263,6 +270,7 @@ class Presence {
 
   async apply(action) {
     if ('memory' in action) this.memory = action.memory;
+    if ('name' in action && !this.name && typeof action.name === 'string') this.name = action.name;
     if ('wake_in_minutes' in action) {
       clearTimeout(this.wakeTimer); this.wakeTimer = null; this.wakeAt = null;
       if (action.wake_in_minutes !== null) {
@@ -279,6 +287,7 @@ class Presence {
       const result = await this.app.client.chat.postMessage({
         channel: this.config.channel,
         text: action.speak.replace(/<![^>]*>/g, m => m.replace('<', '&lt;').replace('>', '&gt;')),
+        ...(this.name ? { username: this.name } : {}),
         ...(action.reply_to ? { thread_ts: this.references.get(action.reply_to) } : {}),
         parse: 'none', unfurl_links: false, unfurl_media: false,
       });
@@ -304,7 +313,7 @@ class Presence {
   die() {
     this.alive = false;
     clearTimeout(this.turnTimer); clearTimeout(this.wakeTimer);
-    this.memory = ''; this.pending = []; this.wakeAt = null;
+    this.memory = ''; this.name = ''; this.pending = []; this.wakeAt = null;
     this.references.clear(); this.seen.clear();
   }
 }

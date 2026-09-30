@@ -36,9 +36,11 @@ test('voice instructions are literal protocol text without identity', () => {
 
 test('manifest enables Socket Mode and the required channel capabilities', () => {
   assert.match(MANIFEST, /socket_mode_enabled: true/);
-  for (const scope of ['chat:write', 'channels:history', 'channels:read', 'groups:history', 'groups:read', 'reactions:read', 'reactions:write']) {
+  for (const scope of ['chat:write', 'chat:write.customize', 'channels:history', 'channels:read', 'groups:history', 'groups:read', 'reactions:read', 'reactions:write']) {
     assert.match(MANIFEST, new RegExp(scope.replace(':', '\\:')));
   }
+  assert.match(MANIFEST, /name: once/);
+  assert.match(MANIFEST, /display_name: once/);
   assert.match(MANIFEST, /message\.channels/);
   assert.match(MANIFEST, /message\.groups/);
   assert.match(MANIFEST, /reaction_added/);
@@ -53,9 +55,22 @@ test('mindPrompt exposes only current state and action schema', () => {
   });
   assert.match(prompt, /something stayed/);
   assert.match(prompt, /hello/);
+  assert.match(prompt, /"name"/);
   assert.match(prompt, /wake_in_minutes/);
   assert.match(prompt, /complete replacement memory/);
   assert.match(prompt, /remaining silent and changing nothing/);
+});
+
+test('mindPrompt stops offering a name once one is chosen', () => {
+  const prompt = mindPrompt({
+    time: '2030-01-01T00:00:00.000Z',
+    memory: '',
+    name: 'Ash',
+    next_activation: null,
+    incoming: [],
+  });
+  assert.doesNotMatch(prompt, /chosen only once/);
+  assert.match(prompt, /Ash/);
 });
 
 test('parseAction accepts an empty action', () => {
@@ -75,10 +90,12 @@ test('parseAction validates all supported actions', () => {
     speak: 'hello',
     reply_to: '1.2',
     react: { message_id: '1.2', emoji: 'sparkles' },
+    name: 'Ash',
     memory: 'kept',
     wake_in_minutes: 17,
   }));
   assert.equal(action.speak, 'hello');
+  assert.equal(action.name, 'Ash');
   assert.equal(action.wake_in_minutes, 17);
 });
 
@@ -92,6 +109,14 @@ test('parseAction rejects oversized speech', () => {
 
 test('parseAction rejects oversized memory', () => {
   assert.throws(() => parseAction(JSON.stringify({ memory: 'x'.repeat(6001) })), /Memory is invalid/);
+});
+
+test('parseAction constrains the displayed name', () => {
+  assert.equal(parseAction('{"name":null}').name, null);
+  assert.equal(parseAction('{"name":"Ash"}').name, 'Ash');
+  assert.throws(() => parseAction('{"name":""}'), /Name is invalid/);
+  assert.throws(() => parseAction('{"name":"<script>"}'), /Name is invalid/);
+  assert.throws(() => parseAction(JSON.stringify({ name: 'x'.repeat(41) })), /Name is invalid/);
 });
 
 test('parseAction constrains future activations', () => {

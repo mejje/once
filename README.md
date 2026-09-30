@@ -125,11 +125,14 @@ It may return only these effects:
 ```text
 speak (optionally as a reply in a thread)
 react
+choose, once, the name its messages are shown under
 replace its private memory
 choose/cancel a future activation
 ```
 
 A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent.
+
+Its messages are shown under the app's own name (`once`) until it chooses its own; the choice is final for this lifetime, lives in memory, and dies with the process.
 
 The local model CLI is invoked non-interactively with its own agent harness stripped. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command. Mentions such as `<!channel>` in its speech are escaped, so it cannot ping the whole room.
 
@@ -178,7 +181,7 @@ The suite covers:
 - harness-stripped invocation of Claude Code, Codex, and OpenCode
 - Slack event filtering and deduplication
 - hearing messages and reactions
-- speaking, replying, and reacting
+- speaking, replying, reacting, and choosing its displayed name
 - complete memory replacement rather than event logging
 - in-memory future activations and cancellation
 - destruction of private state on death

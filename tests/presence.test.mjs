@@ -84,6 +84,26 @@ test('apply can create and cancel an in-memory activation', async () => {
   presence.die();
 });
 
+test('apply sets the displayed name only once', async () => {
+  const { presence } = harness();
+  await presence.apply({ name: 'Ash' });
+  assert.equal(presence.name, 'Ash');
+  await presence.apply({ name: 'Rook' });
+  assert.equal(presence.name, 'Ash');
+  await presence.apply({ name: null });
+  assert.equal(presence.name, 'Ash');
+  presence.die();
+});
+
+test('speech is shown under the chosen name', async () => {
+  const { presence, sent } = harness();
+  await presence.apply({ name: 'Ash', speak: 'hello' });
+  assert.equal(sent.at(-1).username, 'Ash');
+  await presence.apply({ speak: 'still Ash' });
+  assert.equal(sent.at(-1).username, 'Ash');
+  presence.die();
+});
+
 test('apply speaks in the shared channel', async () => {
   const { presence, sent } = harness();
   await presence.apply({ speak: 'hello <!channel>' });
@@ -129,6 +149,7 @@ test('turn consumes current events and applies one action', async () => {
 test('die destroys private in-memory state and intentions', async () => {
   const { presence } = harness();
   presence.memory = 'everything';
+  presence.name = 'Ash';
   presence.pending.push({ kind: 'message' });
   presence.references.set('1', '1');
   presence.seen.add('E1');
@@ -136,6 +157,7 @@ test('die destroys private in-memory state and intentions', async () => {
   presence.die();
   assert.equal(presence.alive, false);
   assert.equal(presence.memory, '');
+  assert.equal(presence.name, '');
   assert.deepEqual(presence.pending, []);
   assert.equal(presence.wakeAt, null);
   assert.equal(presence.references.size, 0);
