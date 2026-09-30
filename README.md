@@ -90,15 +90,16 @@ The launcher talks you through the setup in plain language. It will:
 
 1. discover `claude`, `codex`, and `opencode` on your `PATH`
 2. ask which available CLI it should think through if there is more than one
-3. explain how to create a Slack app from the manifest it prints
-4. wait while you install that app into the workspace
-5. privately ask for the Slack `xoxb-` bot token
-6. explain how to create the Slack `xapp-` Socket Mode token
-7. privately ask for that token
-8. ask for the Slack channel ID and remind you to invite the app there
-9. verify Slack and obtain one initial model response
-10. delete `once.mjs`
-11. allow the presence to begin
+3. ask which model it should think through (press Enter to use the CLI's configured model; Claude offers `sonnet` as its default)
+4. explain how to create a Slack app from the manifest it prints
+5. wait while you install that app into the workspace
+6. privately ask for the Slack `xoxb-` bot token
+7. explain how to create the Slack `xapp-` Socket Mode token
+8. privately ask for that token
+9. ask for the Slack channel ID and remind you to invite the app there
+10. verify Slack and obtain one initial model response
+11. delete `once.mjs`
+12. allow the presence to begin
 
 The self-deletion happens only after Slack is reachable and the initial model invocation has succeeded. If setup fails before that point, the launcher remains so you can try again.
 
@@ -137,6 +138,8 @@ The local model CLI is invoked non-interactively with its own agent harness stri
 - OpenCode runs with its plugins disabled and a generated agent that denies every tool.
 
 That protocol file for Codex lives in the temporary room, contains no private state, and is removed with the room. The presence itself exposes no filesystem or shell action in its output protocol.
+
+The chosen model, if any, is passed to the CLI on every invocation; otherwise the CLI's own configured model is used.
 
 ## End
 

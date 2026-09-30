@@ -64,7 +64,7 @@ settings:
 
 const VOICE_INSTRUCTIONS = 'Respond to each message with exactly one JSON object, following the format described in the message.';
 const OPENCODE_DENIED = ['read', 'edit', 'glob', 'grep', 'list', 'bash', 'task', 'external_directory', 'todowrite', 'webfetch', 'websearch', 'lsp', 'skill', 'question'];
-const OPENCODE_CONFIG = JSON.stringify({ agent: { once: { description: 'Speaks one bounded JSON action.', mode: 'primary', prompt: VOICE_INSTRUCTIONS, permission: Object.fromEntries(OPENCODE_DENIED.map(name => [name, 'deny'])) } } });
+const opencodeConfig = model => JSON.stringify({ agent: { once: { description: 'Speaks one bounded JSON action.', mode: 'primary', prompt: VOICE_INSTRUCTIONS, ...(model ? { model } : {}), permission: Object.fromEntries(OPENCODE_DENIED.map(name => [name, 'deny'])) } } });
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const bounded = (map, n) => { while (map.size > n) map.delete(map.keys().next().value); };
@@ -195,12 +195,15 @@ async function askVoice(config, state, runner = run) {
     args = ['-p', 'Respond only with the JSON action described by the input.', '--output-format', 'text',
       '--max-turns', '1', '--bare', '--system-prompt', VOICE_INSTRUCTIONS,
       '--tools', '', '--no-session-persistence'];
+    if (config.model) args.push('--model', config.model);
   } else if (config.voice === 'codex') {
     const instructions = config.instructionsFile.replace(/\\/g, '/');
-    args = ['-c', `model_instructions_file='${instructions}'`, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'];
+    args = ['-c', `model_instructions_file='${instructions}'`];
+    if (config.model) args.push('-c', `model='${config.model}'`);
+    args.push('exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-');
   } else {
     args = ['--pure', 'run', '--agent', 'once'];
-    env = { ...process.env, OPENCODE_CONFIG_CONTENT: OPENCODE_CONFIG, OPENCODE_DISABLE_CLAUDE_CODE: 'true' };
+    env = { ...process.env, OPENCODE_CONFIG_CONTENT: opencodeConfig(config.model), OPENCODE_DISABLE_CLAUDE_CODE: 'true' };
   }
   const { out } = await runner(config.voiceCommand, args, { cwd: config.emptyCwd, env, input: message, timeout: 180000 });
   return parseAction(out);
@@ -382,6 +385,15 @@ async function launcherMain() {
       `Say one of the names I found: ${names.join(', ')}.`).then(v => v.toLowerCase());
   }
 
+  const defaultModel = voice === 'claude' ? 'sonnet' : '';
+  const model = await askUntil(
+    defaultModel
+      ? `Which model should it think through? Press Enter for ${defaultModel}, or name one: `
+      : 'Which model should it think through? Press Enter to use the model your CLI is already configured with: ',
+    v => !v || /^[A-Za-z0-9._/:-]{1,120}$/.test(v),
+    'That does not look like a model name, an id, or a provider/model id.',
+    { fallback: defaultModel });
+
   console.log('\nFirst, give it somewhere to be. Open https://api.slack.com/apps in your browser.');
   console.log('Choose “Create New App”, then “From an app manifest”, and choose the workspace for the hackathon.');
   console.log('Slack will ask for a manifest. Paste this:\n');
@@ -403,7 +415,7 @@ async function launcherMain() {
   const channel = await askUntil('What is the channel ID? ', v => /^[CG][A-Z0-9]{7,}$/.test(v),
     'I need the channel ID rather than its name or URL.');
 
-  console.log(`\nIt will think through your existing ${voice === 'claude' ? 'Claude Code' : voice === 'codex' ? 'Codex' : 'OpenCode'} login.`);
+  console.log(`\nIt will think through ${model || 'your configured model'} on your existing ${voice === 'claude' ? 'Claude Code' : voice === 'codex' ? 'Codex' : 'OpenCode'} login.`);
   console.log('No model API token will be requested by this program.');
   console.log('It will hear only new messages that arrive after it begins; it will not fetch the channel’s past.');
   const consent = (await prompt('\nWhen you are ready to let it begin, type “begin”: ')).trim().toLowerCase();
@@ -430,7 +442,7 @@ async function launcherMain() {
       env: { ...process.env, ONCE_PRESENCE_CHILD: '1', NODE_DISABLE_COMPILE_CACHE: '1' },
       stdio: ['pipe', 'pipe', 'inherit'],
     });
-    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile }) + '\n');
+    child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
       new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); })),

@@ -58,6 +58,34 @@ test('OpenCode runs pure with a generated agent that denies every tool', async (
   assert.match(options.input, /wake_in_minutes/);
 });
 
+test('an explicit model is passed to each voice in its own form', async () => {
+  const claude = capture('{}');
+  await askVoice({ voice: 'claude', voiceCommand: '/cli/claude', emptyCwd: '/empty', model: 'sonnet' }, state, claude.runner);
+  assert.equal(claude.calls[0][1][claude.calls[0][1].indexOf('--model') + 1], 'sonnet');
+
+  const codex = capture('{}');
+  await askVoice({ voice: 'codex', voiceCommand: '/cli/codex', emptyCwd: '/empty', instructionsFile: '/room/codex-instructions.txt', model: 'gpt-6.1-sol' }, state, codex.runner);
+  assert.ok(codex.calls[0][1].includes("model='gpt-6.1-sol'"));
+
+  const opencode = capture('{}');
+  await askVoice({ voice: 'opencode', voiceCommand: '/cli/opencode', emptyCwd: '/empty', model: 'openrouter/anthropic/claude-sonnet-4' }, state, opencode.runner);
+  assert.equal(JSON.parse(opencode.calls[0][2].env.OPENCODE_CONFIG_CONTENT).agent.once.model, 'openrouter/anthropic/claude-sonnet-4');
+});
+
+test('with no chosen model, no model flags are passed', async () => {
+  const claude = capture('{}');
+  await askVoice({ voice: 'claude', voiceCommand: '/cli/claude', emptyCwd: '/empty' }, state, claude.runner);
+  assert.ok(!claude.calls[0][1].includes('--model'));
+
+  const codex = capture('{}');
+  await askVoice({ voice: 'codex', voiceCommand: '/cli/codex', emptyCwd: '/empty', instructionsFile: '/room/codex-instructions.txt' }, state, codex.runner);
+  assert.ok(!codex.calls[0][1].some(argument => argument.startsWith('model=')));
+
+  const opencode = capture('{}');
+  await askVoice({ voice: 'opencode', voiceCommand: '/cli/opencode', emptyCwd: '/empty' }, state, opencode.runner);
+  assert.equal(JSON.parse(opencode.calls[0][2].env.OPENCODE_CONFIG_CONTENT).agent.once.model, undefined);
+});
+
 test('askVoice rejects non-action output from the local CLI', async () => {
   const c = capture('I would like to say hello.');
   await assert.rejects(() => askVoice({ voice: 'codex', voiceCommand: 'codex', emptyCwd: '/empty', instructionsFile: '/room/codex-instructions.txt' }, state, c.runner), /did not return an action/);
