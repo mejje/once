@@ -147,7 +147,7 @@ choose/cancel a future activation
 
 A reply only continues an existing thread; speech without a reply target goes to the channel, and new threads are never started.
 
-A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent. New messages can make it active sooner, whether or not an activation is pending.
+A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent. New messages can make it active sooner, whether or not an activation is pending. If an answer is rejected as invalid, it is asked once more with the reason.
 
 Its messages are shown under the app's own name (`once`) until it has sent ten messages; from then on it may choose its own name, once. The chosen name lives in memory and dies with the process.
 

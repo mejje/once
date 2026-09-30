@@ -183,6 +183,32 @@ test('turn consumes current events and applies one action', async () => {
   presence.die();
 });
 
+test('a rejected thought is retried once with the reason', async () => {
+  const { presence, sent } = harness();
+  presence.pending.push({ kind: 'message', id: '10.1', user: 'U1', text: 'hello' });
+  const rejections = [];
+  presence.think = async (incoming, rejection) => {
+    rejections.push(rejection);
+    if (rejections.length === 1) throw new Error('Speech is invalid: 42');
+    return { speak: 'fixed' };
+  };
+  await presence.turn();
+  assert.equal(sent[0].text, 'fixed');
+  assert.equal(rejections.length, 2);
+  assert.equal(rejections[1], 'Speech is invalid: 42');
+  presence.die();
+});
+
+test('a thought is retried only once', async () => {
+  const { presence } = harness();
+  presence.pending.push({ kind: 'message', id: '10.1', user: 'U1', text: 'hello' });
+  let calls = 0;
+  presence.think = async () => { calls += 1; throw new Error('always bad'); };
+  await presence.turn();
+  assert.equal(calls, 2);
+  presence.die();
+});
+
 test('die destroys private in-memory state and intentions', async () => {
   const { presence } = harness();
   presence.memory = 'everything';

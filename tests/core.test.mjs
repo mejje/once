@@ -62,6 +62,7 @@ test('mindPrompt exposes only current state and action schema', () => {
   assert.match(prompt, /does not have to be chosen now/);
   assert.match(prompt, /making you active now/);
   assert.match(prompt, /references for reply_to and react/);
+  assert.match(prompt, /may be fractional \(0.25 is 15 seconds\)/);
   assert.match(prompt, /wake_in_minutes/);
   assert.match(prompt, /complete replacement memory/);
   assert.match(prompt, /remaining silent and changing nothing/);
@@ -90,6 +91,19 @@ test('mindPrompt withholds the name until enough messages have been sent', () =>
   });
   assert.doesNotMatch(prompt, /chosen only once/);
   assert.doesNotMatch(prompt, /the one name your messages/);
+});
+
+test('mindPrompt includes a rejection note when given one', () => {
+  const prompt = mindPrompt({
+    time: '2030-01-01T00:00:00.000Z',
+    memory: '',
+    name: '',
+    messages_sent: 0,
+    next_activation: null,
+    incoming: [],
+    rejection: 'Speech is invalid: 42',
+  });
+  assert.match(prompt, /previous answer was rejected: Speech is invalid: 42/);
 });
 
 test('parseAction accepts an empty action', () => {
@@ -123,11 +137,11 @@ test('parseAction rejects unknown powers', () => {
 });
 
 test('parseAction rejects oversized speech', () => {
-  assert.throws(() => parseAction(JSON.stringify({ speak: 'x'.repeat(2001) })), /Speech is invalid/);
+  assert.throws(() => parseAction(JSON.stringify({ speak: 'x'.repeat(2001) })), /Speech is invalid: 2001 characters/);
 });
 
 test('parseAction rejects oversized memory', () => {
-  assert.throws(() => parseAction(JSON.stringify({ memory: 'x'.repeat(6001) })), /Memory is invalid/);
+  assert.throws(() => parseAction(JSON.stringify({ memory: 'x'.repeat(6001) })), /Memory is invalid: 6001 characters/);
 });
 
 test('parseAction constrains the displayed name', () => {

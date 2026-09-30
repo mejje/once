@@ -175,7 +175,7 @@ Your entire private memory is the value of memory above. Rewrite it only if some
 Respond with exactly one JSON object and nothing else. Every field is optional:
 {"speak":"text for the shared Slack channel","reply_to":"heard message id, to continue its thread","react":{"message_id":"heard message id","emoji":"emoji_name_without_colons"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
 
-wake_in_minutes may also be null to cancel a future activation. A pending activation does not stop anything that reaches you from making you active now. Ids are references for reply_to and react; who people are comes from what they say. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
+wake_in_minutes is in minutes and may be fractional (0.25 is 15 seconds); it may also be null to cancel a future activation, and a new value on any activation replaces the pending one. A pending activation does not stop anything that reaches you from making you active now. Ids are references for reply_to and react; who people are comes from what they say. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.${state.rejection ? `\n\nYour previous answer was rejected: ${state.rejection}\nRespond again with exactly one JSON object.` : ''}`;
 }
 
 function parseAction(text) {
@@ -193,10 +193,12 @@ function parseAction(text) {
   const allowed = new Set(['speak', 'reply_to', 'react', 'name', 'memory', 'wake_in_minutes']);
   const unknown = Object.keys(action).filter(key => !allowed.has(key));
   if (unknown.length) throw new Error(`The chosen CLI returned an unknown action: ${unknown.join(', ')} (${JSON.stringify(action)})`);
-  if ('speak' in action && (typeof action.speak !== 'string' || action.speak.length > 2000)) throw new Error('Speech is invalid.');
+  if ('speak' in action && typeof action.speak !== 'string') throw new Error(`Speech is invalid: ${JSON.stringify(action.speak)}`);
+  if ('speak' in action && typeof action.speak === 'string' && action.speak.length > 2000) throw new Error(`Speech is invalid: ${action.speak.length} characters`);
   if ('name' in action && action.name !== null &&
-      (typeof action.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(action.name))) throw new Error('Name is invalid.');
-  if ('memory' in action && (typeof action.memory !== 'string' || action.memory.length > 6000)) throw new Error('Memory is invalid.');
+      (typeof action.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(action.name))) throw new Error(`Name is invalid: ${JSON.stringify(action.name)}`);
+  if ('memory' in action && typeof action.memory !== 'string') throw new Error(`Memory is invalid: ${JSON.stringify(action.memory)}`);
+  if ('memory' in action && typeof action.memory === 'string' && action.memory.length > 6000) throw new Error(`Memory is invalid: ${action.memory.length} characters`);
   if ('wake_in_minutes' in action && action.wake_in_minutes !== null) {
     const raw = action.wake_in_minutes;
     if (typeof raw === 'string' && raw.trim()) action.wake_in_minutes = Number(raw);
@@ -276,7 +278,7 @@ class Presence {
     this.turnTimer = setTimeout(() => { this.turnTimer = null; void this.turn(); }, delay);
   }
 
-  async think(events) {
+  async think(events, rejection = '') {
     const state = {
       time: new Date().toISOString(),
       memory: this.memory,
@@ -284,11 +286,14 @@ class Presence {
       messages_sent: this.messagesSent,
       next_activation: this.wakeAt,
       incoming: events,
+      ...(rejection ? { rejection } : {}),
     };
     return await askVoice(this.config, state);
   }
 
   async apply(action) {
+    if (action.reply_to && !this.references.has(action.reply_to)) throw new Error(`Unknown reply target: ${action.reply_to}`);
+    if (action.react && !this.references.has(action.react.message_id)) throw new Error(`Unknown reaction target: ${action.react.message_id}`);
     if ('memory' in action) this.memory = action.memory;
     if ('name' in action && !this.name && this.messagesSent >= NAME_AFTER_MESSAGES && typeof action.name === 'string') this.name = action.name;
     if ('wake_in_minutes' in action) {
@@ -303,7 +308,6 @@ class Presence {
       }
     }
     if (action.speak?.trim()) {
-      if (action.reply_to && !this.references.has(action.reply_to)) throw new Error(`Unknown reply target: ${action.reply_to}`);
       const thread = action.reply_to ? this.references.get(action.reply_to) : null;
       const result = await this.app.client.chat.postMessage({
         channel: this.config.channel,
@@ -317,7 +321,6 @@ class Presence {
       this.messagesSent += 1;
     }
     if (action.react) {
-      if (!this.references.has(action.react.message_id)) throw new Error(`Unknown reaction target: ${action.react.message_id}`);
       try { await this.app.client.reactions.add({ channel: this.config.channel, timestamp: action.react.message_id, name: action.react.emoji }); }
       catch (e) { console.error(`Reaction failed: ${cleanError(e)}`); }
     }
@@ -328,7 +331,11 @@ class Presence {
     this.busy = true;
     const incoming = this.pending.splice(0);
     try { await this.apply(await this.think(incoming)); }
-    catch (e) { console.error(`A thought failed: ${cleanError(e)}`); }
+    catch (e) {
+      console.error(`A thought failed: ${cleanError(e)}`);
+      try { await this.apply(await this.think(incoming, cleanError(e))); }
+      catch (retry) { console.error(`The retry failed: ${cleanError(retry)}`); }
+    }
     finally { this.busy = false; this.arrange(5000); }
   }
 

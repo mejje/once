@@ -14,7 +14,7 @@ Keep these true. They are the piece, not implementation details.
 
 1. **No identity is given.** `SEED` (once.mjs:29) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `VOICE_INSTRUCTIONS` (once.mjs:66) is literal protocol text, never identity; `tests/core.test.mjs` asserts both are exact and identity-free.
 2. **It knows only what reaches it.** Never fetch Slack history, never inspect repositories, CI, GitHub, or the filesystem, never browse. Its universe is: new Slack events, time, its own memory, its own source. What it knows about the work, it was told.
-3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:335) erases them. A successful birth deletes the launcher itself (once.mjs:521) unless developer mode is set through `ONCE_*` environment variables; a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
+3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:342) erases them. A successful birth deletes the launcher itself (once.mjs:528) unless developer mode is set through `ONCE_*` environment variables; a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
 4. **"Nothing is saved" is not "nothing is retained."** The OS may page memory, Slack and the model provider retain what their products retain. Never describe the program as more private than it is; see README for the exact boundary.
 5. **Speech is the only power that matters.** It influences the team by talking, replying, reacting — a member of the team, not a supervisor. It may notice silence and act on its own timer. Never give it management, surveillance, or intervention powers.
 6. **Mechanics are described literally, never as metaphor.** The action schema is speak (optionally with `reply_to`), react, name, memory, wake. Do not frame anything anthropomorphically ("sleep", "dream", "feel") in prompts or code. If the creature adopts such metaphors, they came from it.
@@ -34,6 +34,7 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - event filtering, dedup, memory replacement, in-memory activations, a displayed name available only after ten sent messages and chosen once, destruction on death (presence.test.mjs)
 - replies only continue an existing thread; top-level speech never starts one (presence.test.mjs)
 - incoming events always schedule a turn, even while an activation is pending (presence.test.mjs)
+- a rejected thought is retried exactly once with the rejection echoed into the prompt (presence.test.mjs, core.test.mjs)
 - import safety: importing once.mjs must not start anything (import.test.mjs)
 - speech escapes `<!channel>`-style mentions so it cannot mass-ping (presence.test.mjs)
 
@@ -43,14 +44,14 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - `prompt` / `askUntil` (75/94) — interactive, plain-language setup
 - `pathCandidates` / `findCommand` / `discoverVoices` (103/111/124) — PATH inspection only, never executes a CLI to discover it; `VOICE_COMMANDS` (118) prefers `opencode-cli` over the desktop `opencode`
 - `run` / `windowsQuote` (142/135) — child execution; human and Slack text always goes over stdin, never interpolated
-- `mindPrompt` / `parseAction` (164/181) — the entire protocol: one bounded JSON action
-- `askVoice` (214) — per-CLI model and invocation flags, each voice stripped of its own agent harness
-- `Presence` (235) — perception, batching, actions, memory, a displayed name offered after ten sent messages, one timer, death
-- `findNpmCli` / `childMain` (343/358) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
-- `voiceLabel` / `readDevConfig` (395/397) — developer mode from `ONCE_VOICE`, `ONCE_BOT_TOKEN`, `ONCE_APP_TOKEN`, `ONCE_CHANNEL`, optional `ONCE_MODEL`
-- `launcherMain` (411) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion (skipped in developer mode, which keeps the launcher)
+- `mindPrompt` / `parseAction` (164/181) — the entire protocol: one bounded JSON action, with the rejection echoed on a retry
+- `askVoice` (216) — per-CLI model and invocation flags, each voice stripped of its own agent harness
+- `Presence` (237) — perception, batching, actions, memory, a displayed name offered after ten sent messages, one timer, death
+- `findNpmCli` / `childMain` (350/365) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
+- `voiceLabel` / `readDevConfig` (402/404) — developer mode from `ONCE_VOICE`, `ONCE_BOT_TOKEN`, `ONCE_APP_TOKEN`, `ONCE_CHANNEL`, optional `ONCE_MODEL`
+- `launcherMain` (418) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion (skipped in developer mode, which keeps the launcher)
 
-Timing constants are physics: 2500 ms debounce (274), 5000 ms settle (332), 32 pending events (270), 256 seen ids (258), 64 references (262), 180 s model timeout (231). Tune deliberately; never grow them into queues or history.
+Timing constants are physics: 2500 ms debounce (276), 5000 ms settle (339), 32 pending events (272), 256 seen ids (260), 64 references (264), 180 s model timeout (233). Tune deliberately; never grow them into queues or history.
 
 ## Extending it
 
