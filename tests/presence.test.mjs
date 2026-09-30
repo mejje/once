@@ -103,8 +103,16 @@ test('incoming events schedule a turn while an activation is pending', async () 
   presence.die();
 });
 
+test('the name is ignored before ten messages have been sent', async () => {
+  const { presence } = harness();
+  await presence.apply({ name: 'Ash' });
+  assert.equal(presence.name, '');
+  presence.die();
+});
+
 test('apply sets the displayed name only once', async () => {
   const { presence } = harness();
+  presence.messagesSent = 10;
   await presence.apply({ name: 'Ash' });
   assert.equal(presence.name, 'Ash');
   await presence.apply({ name: 'Rook' });
@@ -116,6 +124,7 @@ test('apply sets the displayed name only once', async () => {
 
 test('speech is shown under the chosen name', async () => {
   const { presence, sent } = harness();
+  presence.messagesSent = 10;
   await presence.apply({ name: 'Ash', speak: 'hello' });
   assert.equal(sent.at(-1).username, 'Ash');
   await presence.apply({ speak: 'still Ash' });
@@ -130,6 +139,7 @@ test('apply speaks in the shared channel', async () => {
   assert.equal(sent[0].channel, 'C12345678');
   assert.equal(sent[0].text, 'hello &lt;!channel&gt;');
   assert.equal(sent[0].parse, 'none');
+  assert.equal(presence.messagesSent, 1);
   presence.die();
 });
 
@@ -183,6 +193,7 @@ test('die destroys private in-memory state and intentions', async () => {
   const { presence } = harness();
   presence.memory = 'everything';
   presence.name = 'Ash';
+  presence.messagesSent = 10;
   presence.pending.push({ kind: 'message' });
   presence.references.set('1', '1');
   presence.seen.add('E1');
@@ -191,6 +202,7 @@ test('die destroys private in-memory state and intentions', async () => {
   assert.equal(presence.alive, false);
   assert.equal(presence.memory, '');
   assert.equal(presence.name, '');
+  assert.equal(presence.messagesSent, 0);
   assert.deepEqual(presence.pending, []);
   assert.equal(presence.wakeAt, null);
   assert.equal(presence.references.size, 0);

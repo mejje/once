@@ -52,6 +52,7 @@ test('mindPrompt exposes only current state and action schema', () => {
     time: '2030-01-01T00:00:00.000Z',
     memory: 'something stayed',
     name: '',
+    messages_sent: 10,
     next_activation: null,
     incoming: [{ kind: 'message', text: 'hello' }],
   });
@@ -76,6 +77,19 @@ test('mindPrompt stops offering a name once one is chosen', () => {
   });
   assert.doesNotMatch(prompt, /chosen only once/);
   assert.match(prompt, /Ash/);
+});
+
+test('mindPrompt withholds the name until enough messages have been sent', () => {
+  const prompt = mindPrompt({
+    time: '2030-01-01T00:00:00.000Z',
+    memory: '',
+    name: '',
+    messages_sent: 9,
+    next_activation: null,
+    incoming: [],
+  });
+  assert.doesNotMatch(prompt, /chosen only once/);
+  assert.doesNotMatch(prompt, /the one name your messages/);
 });
 
 test('parseAction accepts an empty action', () => {
@@ -105,7 +119,7 @@ test('parseAction validates all supported actions', () => {
 });
 
 test('parseAction rejects unknown powers', () => {
-  assert.throws(() => parseAction('{"browse":"https://example.com"}'), /unknown action: \{"browse":"https/);
+  assert.throws(() => parseAction('{"browse":"https://example.com"}'), /unknown action: browse/);
 });
 
 test('parseAction rejects oversized speech', () => {

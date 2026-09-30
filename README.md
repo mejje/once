@@ -149,7 +149,7 @@ A reply only continues an existing thread; speech without a reply target goes to
 
 A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent. New messages can make it active sooner, whether or not an activation is pending. In developer mode, the launching terminal reports each turn: how many events reached it, whether it spoke or stayed silent, and whether it chose a new activation.
 
-Its messages are shown under the app's own name (`once`) until it chooses its own; the prompt tells it the choice is one-time and does not have to be made immediately. The chosen name lives in memory and dies with the process.
+Its messages are shown under the app's own name (`once`) until it has sent ten messages; from then on it may choose its own name, once. The chosen name lives in memory and dies with the process.
 
 The local model CLI is invoked non-interactively with its own agent harness stripped. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command. Mentions such as `<!channel>` in its speech are escaped, so it cannot ping the whole room.
 

@@ -66,10 +66,11 @@ settings:
 const VOICE_INSTRUCTIONS = 'Respond to each message with exactly one JSON object, following the format described in the message.';
 const OPENCODE_DENIED = ['read', 'edit', 'glob', 'grep', 'list', 'bash', 'task', 'external_directory', 'todowrite', 'webfetch', 'websearch', 'lsp', 'skill', 'question'];
 const opencodeConfig = model => JSON.stringify({ agent: { once: { description: 'Speaks one bounded JSON action.', mode: 'primary', prompt: VOICE_INSTRUCTIONS, ...(model ? { model } : {}), permission: Object.fromEntries(OPENCODE_DENIED.map(name => [name, 'deny'])) } } });
+const NAME_AFTER_MESSAGES = 10;
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = ms => new Promise(resolve => { setTimeout(resolve, ms).unref(); });
 const bounded = (map, n) => { while (map.size > n) map.delete(map.keys().next().value); };
-const cleanError = e => String(e?.data?.error ?? e?.message ?? e ?? 'unknown error').replace(/[\r\n]+/g, ' ').slice(0, 240);
+const cleanError = e => String(e?.data?.error ?? e?.message ?? e ?? 'unknown error').replace(/[\r\n]+/g, ' ');
 
 function prompt(label, secret = false) {
   return new Promise((resolve, reject) => {
@@ -161,8 +162,9 @@ async function run(command, args, { cwd, input = '', timeout = 120000, env = pro
 }
 
 function mindPrompt(state) {
-  const nameField = state.name ? '' : '"name":"the one name your messages will be shown under",';
-  const nameNote = state.name ? '' : ' The name can be chosen only once and then stays; it does not have to be chosen now.';
+  const mayName = !state.name && state.messages_sent >= NAME_AFTER_MESSAGES;
+  const nameField = mayName ? '"name":"the one name your messages will be shown under",' : '';
+  const nameNote = mayName ? ' The name can be chosen only once and then stays; it does not have to be chosen now.' : '';
   return `${SEED}
 
 This is what reaches you now:
@@ -184,13 +186,13 @@ function parseAction(text) {
   try { action = JSON.parse(value); }
   catch {
     const start = value.indexOf('{'), end = value.lastIndexOf('}');
-    if (start < 0 || end <= start) throw new Error(`The chosen CLI did not return an action: ${value.slice(0, 160)}`);
+    if (start < 0 || end <= start) throw new Error(`The chosen CLI did not return an action: ${value}`);
     action = JSON.parse(value.slice(start, end + 1));
   }
-  if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error(`The chosen CLI returned an invalid action: ${value.slice(0, 160)}`);
+  if (!action || typeof action !== 'object' || Array.isArray(action)) throw new Error(`The chosen CLI returned an invalid action: ${value}`);
   const allowed = new Set(['speak', 'reply_to', 'react', 'name', 'memory', 'wake_in_minutes']);
   const unknown = Object.keys(action).filter(key => !allowed.has(key));
-  if (unknown.length) throw new Error(`The chosen CLI returned an unknown action: ${JSON.stringify(action).slice(0, 160)}`);
+  if (unknown.length) throw new Error(`The chosen CLI returned an unknown action: ${unknown.join(', ')} (${JSON.stringify(action)})`);
   if ('speak' in action && (typeof action.speak !== 'string' || action.speak.length > 2000)) throw new Error('Speech is invalid.');
   if ('name' in action && action.name !== null &&
       (typeof action.name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/.test(action.name))) throw new Error('Name is invalid.');
@@ -199,12 +201,12 @@ function parseAction(text) {
     const raw = action.wake_in_minutes;
     if (typeof raw === 'string' && raw.trim()) action.wake_in_minutes = Number(raw);
     if (!Number.isFinite(action.wake_in_minutes) || action.wake_in_minutes <= 0 || action.wake_in_minutes > 2880)
-      throw new Error(`Activation time is invalid: ${JSON.stringify(raw).slice(0, 60)}`);
+      throw new Error(`Activation time is invalid: ${JSON.stringify(raw)}`);
   }
   if ('react' in action) {
-    if (!action.react || typeof action.react.message_id !== 'string' || typeof action.react.emoji !== 'string') throw new Error(`Reaction is invalid: ${JSON.stringify(action.react).slice(0, 120)}`);
+    if (!action.react || typeof action.react.message_id !== 'string' || typeof action.react.emoji !== 'string') throw new Error(`Reaction is invalid: ${JSON.stringify(action.react)}`);
     action.react.emoji = action.react.emoji.replace(/^:+|:+$/g, '');
-    if (!/^[a-z0-9_+-]{1,80}$/.test(action.react.emoji)) throw new Error(`Reaction is invalid: ${action.react.emoji.slice(0, 80)}`);
+    if (!/^[a-z0-9_+-]{1,80}$/.test(action.react.emoji)) throw new Error(`Reaction is invalid: ${action.react.emoji}`);
   }
   return action;
 }
@@ -233,6 +235,7 @@ async function askVoice(config, state, runner = run) {
 class Presence {
   memory = '';
   name = '';
+  messagesSent = 0;
   pending = [];
   wakeAt = null;
   wakeTimer = null;
@@ -278,6 +281,7 @@ class Presence {
       time: new Date().toISOString(),
       memory: this.memory,
       name: this.name,
+      messages_sent: this.messagesSent,
       next_activation: this.wakeAt,
       incoming: events,
     };
@@ -286,7 +290,7 @@ class Presence {
 
   async apply(action) {
     if ('memory' in action) this.memory = action.memory;
-    if ('name' in action && !this.name && typeof action.name === 'string') this.name = action.name;
+    if ('name' in action && !this.name && this.messagesSent >= NAME_AFTER_MESSAGES && typeof action.name === 'string') this.name = action.name;
     if ('wake_in_minutes' in action) {
       clearTimeout(this.wakeTimer); this.wakeTimer = null; this.wakeAt = null;
       if (action.wake_in_minutes !== null) {
@@ -310,6 +314,7 @@ class Presence {
       });
       this.references.set(result.ts, thread);
       bounded(this.references, 64);
+      this.messagesSent += 1;
     }
     if (action.react) {
       if (!this.references.has(action.react.message_id)) throw new Error(`Unknown reaction target: ${action.react.message_id}`);
@@ -337,7 +342,7 @@ class Presence {
   die() {
     this.alive = false;
     clearTimeout(this.turnTimer); clearTimeout(this.wakeTimer);
-    this.memory = ''; this.name = ''; this.pending = []; this.wakeAt = null;
+    this.memory = ''; this.name = ''; this.messagesSent = 0; this.pending = []; this.wakeAt = null;
     this.references.clear(); this.seen.clear();
   }
 }
