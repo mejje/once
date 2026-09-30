@@ -162,7 +162,7 @@ async function run(command, args, { cwd, input = '', timeout = 120000, env = pro
 
 function mindPrompt(state) {
   const nameField = state.name ? '' : '"name":"the one name your messages will be shown under",';
-  const nameNote = state.name ? '' : ' The name can be chosen only once and then stays.';
+  const nameNote = state.name ? '' : ' The name can be chosen only once and then stays; it does not have to be chosen now.';
   return `${SEED}
 
 This is what reaches you now:
@@ -171,7 +171,7 @@ ${JSON.stringify(state)}
 Your entire private memory is the value of memory above. Rewrite it only if something should remain with you.
 
 Respond with exactly one JSON object and nothing else. Every field is optional:
-{"speak":"text for the shared Slack channel","reply_to":"heard message id","react":{"message_id":"heard message id","emoji":"emoji_name_without_colons"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
+{"speak":"text for the shared Slack channel","reply_to":"heard message id, to continue its thread","react":{"message_id":"heard message id","emoji":"emoji_name_without_colons"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
 
 wake_in_minutes may also be null to cancel a future activation. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
 }
@@ -251,7 +251,7 @@ class Presence {
     if (event.type === 'message') {
       if (event.subtype && !['me_message', 'thread_broadcast'].includes(event.subtype)) return;
       if (typeof event.text !== 'string' || !event.text.trim()) return;
-      this.references.set(event.ts, event.thread_ts ?? event.ts); bounded(this.references, 64);
+      this.references.set(event.ts, event.thread_ts ?? null); bounded(this.references, 64);
       this.enqueue({ kind: 'message', id: event.ts, user: event.user, thread: event.thread_ts ?? null, text: event.text.slice(0, 3000) });
     } else if (event.type === 'reaction_added' && event.item?.type === 'message' && this.references.has(event.item.ts)) {
       this.enqueue({ kind: 'reaction', user: event.user, message_id: event.item.ts, emoji: event.reaction });
@@ -295,14 +295,15 @@ class Presence {
     }
     if (action.speak?.trim()) {
       if (action.reply_to && !this.references.has(action.reply_to)) throw new Error('Unknown reply target.');
+      const thread = action.reply_to ? this.references.get(action.reply_to) : null;
       const result = await this.app.client.chat.postMessage({
         channel: this.config.channel,
         text: action.speak.replace(/<![^>]*>/g, m => m.replace('<', '&lt;').replace('>', '&gt;')),
         ...(this.name ? { username: this.name } : {}),
-        ...(action.reply_to ? { thread_ts: this.references.get(action.reply_to) } : {}),
+        ...(thread ? { thread_ts: thread } : {}),
         parse: 'none', unfurl_links: false, unfurl_media: false,
       });
-      this.references.set(result.ts, action.reply_to ? this.references.get(action.reply_to) : result.ts);
+      this.references.set(result.ts, thread);
       bounded(this.references, 64);
     }
     if (action.react) {

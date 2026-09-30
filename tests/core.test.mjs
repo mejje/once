@@ -51,12 +51,14 @@ test('mindPrompt exposes only current state and action schema', () => {
   const prompt = mindPrompt({
     time: '2030-01-01T00:00:00.000Z',
     memory: 'something stayed',
+    name: '',
     next_activation: null,
     incoming: [{ kind: 'message', text: 'hello' }],
   });
   assert.match(prompt, /something stayed/);
   assert.match(prompt, /hello/);
   assert.match(prompt, /"name"/);
+  assert.match(prompt, /does not have to be chosen now/);
   assert.match(prompt, /wake_in_minutes/);
   assert.match(prompt, /complete replacement memory/);
   assert.match(prompt, /remaining silent and changing nothing/);

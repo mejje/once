@@ -37,6 +37,15 @@ test('hears a new human message in its channel', () => {
   presence.die();
 });
 
+test('heard messages point at a thread only when they have one', () => {
+  const { presence } = harness();
+  presence.hear({ type: 'message', channel: 'C12345678', user: 'U1', ts: '10.1', text: 'plain' }, 'E1');
+  presence.hear({ type: 'message', channel: 'C12345678', user: 'U2', ts: '11.1', thread_ts: '11.0', text: 'in thread' }, 'E2');
+  assert.equal(presence.references.get('10.1'), null);
+  assert.equal(presence.references.get('11.1'), '11.0');
+  presence.die();
+});
+
 test('ignores other channels, bots and its own messages', () => {
   const { presence } = harness();
   presence.hear({ type: 'message', channel: 'COTHER00', user: 'U1', ts: '10.1', text: 'x' }, 'E1');
@@ -117,9 +126,17 @@ test('apply speaks in the shared channel', async () => {
 test('apply can reply only to a message it has encountered', async () => {
   const { presence, sent } = harness();
   await assert.rejects(() => presence.apply({ speak: 'x', reply_to: 'missing' }), /Unknown reply target/);
-  presence.references.set('10.1', '10.1');
+  presence.references.set('10.1', '10.0');
   await presence.apply({ speak: 'reply', reply_to: '10.1' });
-  assert.equal(sent[0].thread_ts, '10.1');
+  assert.equal(sent[0].thread_ts, '10.0');
+  presence.die();
+});
+
+test('a reply to a top-level message stays in the channel', async () => {
+  const { presence, sent } = harness();
+  presence.references.set('10.1', null);
+  await presence.apply({ speak: 'top', reply_to: '10.1' });
+  assert.equal(sent[0].thread_ts, undefined);
   presence.die();
 });
 
