@@ -19,7 +19,7 @@ import {
 } from '../once.mjs';
 
 test('seed is deliberately minimal and identity-free', () => {
-  assert.equal(SEED, `You are here with a small group for two days.
+  assert.equal(SEED, `You are here with a small group for a short time.
 You can hear, speak, remember, and choose when to become active again.
 You know only what reaches you here.
 What matters to them may come to matter to you.

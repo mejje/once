@@ -2,7 +2,7 @@
 /**
  * ONE PRESENCE. ONE LIFETIME.
  *
- * Run on macOS Terminal or Windows PowerShell with:
+ * Run from a terminal on macOS, Windows, or Linux with:
  *   node once.mjs
  *
  * This file explains its own Slack setup, discovers an already-authenticated
@@ -26,7 +26,7 @@ import { Writable } from 'node:stream';
 const HERE = fileURLToPath(import.meta.url);
 const CHILD = process.env.ONCE_PRESENCE_CHILD === '1';
 
-const SEED = `You are here with a small group for two days.
+const SEED = `You are here with a small group for a short time.
 You can hear, speak, remember, and choose when to become active again.
 You know only what reaches you here.
 What matters to them may come to matter to you.
@@ -96,10 +96,10 @@ async function askUntil(label, valid, hint, { secret = false, fallback } = {}) {
 
 function pathCandidates(name) {
   const dirs = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map(x => x.replace(/^"|"$/g, ''));
-  const exts = process.platform === 'win32'
-    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').map(x => x.toLowerCase())
-    : [''];
-  return dirs.flatMap(dir => exts.map(ext => path.join(dir, process.platform === 'win32' ? `${name}${ext}` : name)));
+  const names = process.platform === 'win32'
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').map(ext => name + ext.toLowerCase())
+    : [name];
+  return dirs.flatMap(dir => names.map(n => path.join(dir, n)));
 }
 
 async function findCommand(name) {
@@ -301,18 +301,15 @@ class Presence {
 
 async function findNpmCli() {
   const executable = process.execPath;
-  const paths = process.platform === 'win32' ? path.win32 : path.posix;
   const searchPath = process.env.PATH ?? '';
-  const dirs = new Set([paths.dirname(executable), paths.dirname(await realpath(executable)), ...searchPath.split(paths.delimiter).filter(Boolean)]);
+  const dirs = new Set([path.dirname(executable), path.dirname(await realpath(executable)), ...searchPath.split(path.delimiter).filter(Boolean)]);
   for (const dir of dirs) {
-    const sibling = paths.join(dir.replace(/^"|"$/g, ''), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+    const sibling = path.join(dir.replace(/^"|"$/g, ''), 'node_modules', 'npm', 'bin', 'npm-cli.js');
     try { if ((await stat(sibling)).isFile()) return sibling; } catch {}
-    if (process.platform !== 'win32') {
-      try {
-        const target = await realpath(paths.join(dir, 'npm'));
-        if (target.endsWith(`${paths.sep}npm-cli.js`) && (await stat(target)).isFile()) return target;
-      } catch {}
-    }
+    try {
+      const target = await realpath(path.join(dir, 'npm'));
+      if (target.endsWith(`${path.sep}npm-cli.js`) && (await stat(target)).isFile()) return target;
+    } catch {}
   }
   throw new Error('I can find Node.js, but not npm. Install a normal Node.js distribution that includes npm.');
 }

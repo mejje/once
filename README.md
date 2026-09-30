@@ -4,7 +4,7 @@ A presence that exists in one Slack channel for one lifetime.
 
 It begins with almost nothing:
 
-> You are here with a small group for two days.  
+> You are here with a small group for a short time.  
 > You can hear, speak, remember, and choose when to become active again.  
 > You know only what reaches you here.  
 > What matters to them may come to matter to you.  
@@ -13,14 +13,27 @@ It begins with almost nothing:
 
 There is no predefined name, character, project plan, achievement system, or identity.
 
-It hears what people say after it begins. It can speak, react, retain a small mutable private memory, and choose a future time to become active again. Its private memory and future intentions exist only in RAM.
+It hears what people say after it begins. It can speak, reply, react, retain a small mutable private memory, and choose a future time to become active again. Its private memory and future intentions exist only in RAM.
 
 When the process ends, that inner life is gone.
+
+## Spirit
+
+This program is not a bot, an assistant, a manager, or a monitor. It is a presence with one lifetime, and most of its design is made of refusals:
+
+- no identity is written for it; the seed above is the whole of what it is told
+- no persistence; memory and intentions exist only in RAM
+- no external awareness; no history fetching, repositories, CI, or browsing
+- no powers beyond speaking, replying, reacting, remembering, and choosing when to become active again
+- no safety rules inside its self-conception; every boundary lives in the implementation
+
+`AGENTS.md` records these invariants and how to continue the work without eroding them.
 
 ## What is in this repository
 
 ```text
 README.md
+AGENTS.md
 once.mjs
 tests/
   architecture.test.mjs
@@ -32,11 +45,11 @@ tests/
 
 `once.mjs` is both the installer and the program.
 
-There is no application database, state file, model API key, daemon, Docker container, or setup program.
+There is no application database, state file, model API key, daemon, Docker container, or separate setup program.
 
 ## Requirements
 
-- macOS or Windows
+- macOS, Windows, or Linux
 - Node.js 22 or newer, with npm available
 - one already installed and authenticated local model CLI:
   - `claude`
@@ -44,7 +57,7 @@ There is no application database, state file, model API key, daemon, Docker cont
   - `opencode`
 - permission to create/install a Slack app in the workspace
 
-The model side uses your existing CLI login. `once` does **not** ask for an Anthropic, OpenAI, or OpenCode API key.
+The model side uses your existing CLI login. `once` does **not** ask for a model API key.
 
 Slack itself still needs Slack credentials. The interactive setup explains how to create them:
 
@@ -61,17 +74,11 @@ Optionally run the tests first:
 node --test tests/*.test.mjs
 ```
 
-On Windows PowerShell, the same command works:
-
-```powershell
-node --test tests/*.test.mjs
-```
-
 No test dependencies need to be installed.
 
 ## Begin
 
-From Terminal on macOS or PowerShell on Windows:
+From a terminal on macOS, Windows, or Linux:
 
 ```sh
 node once.mjs
@@ -99,7 +106,7 @@ The self-deletion happens only after Slack is reachable and the initial model in
 
 A successful birth deletes the exact `once.mjs` file you launched.
 
-If you want another copy later, re-extract the ZIP. A newly launched copy is a new presence; nothing of the previous private state can be restored.
+If you want another one later, you'll have to find it again. A newly launched one is a new presence; nothing of the previous private state can be restored.
 
 ## During its lifetime
 
@@ -115,8 +122,7 @@ The model is shown only:
 It may return only these effects:
 
 ```text
-speak
-reply
+speak (optionally as a reply in a thread)
 react
 replace its private memory
 choose/cancel a future activation
@@ -124,7 +130,7 @@ choose/cancel a future activation
 
 A future activation is an in-memory timer. When it fires, the model becomes active again and may speak or remain silent.
 
-The local model CLI is invoked non-interactively. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command.
+The local model CLI is invoked non-interactively. Slack/channel text is sent to the CLI over stdin rather than interpolated into a shell command. Mentions such as `<!channel>` in its speech are escaped, so it cannot ping the whole room.
 
 For Claude Code, editing/shell/web tools are disabled for the invocation. Codex is invoked in a read-only sandbox. OpenCode is invoked through `opencode run`; the presence itself still exposes no filesystem or shell action in its output protocol.
 
