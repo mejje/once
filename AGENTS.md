@@ -14,7 +14,7 @@ Keep these true. They are the piece, not implementation details.
 
 1. **No identity is given.** `SEED` (once.mjs:29) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `VOICE_INSTRUCTIONS` (once.mjs:66) is literal protocol text, never identity; `tests/core.test.mjs` asserts both are exact and identity-free.
 2. **It knows only what reaches it.** Never fetch Slack history, never inspect repositories, CI, GitHub, or the filesystem, never browse. Its universe is: new Slack events, time, its own memory, its own source. What it knows about the work, it was told.
-3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:321) erases them. A successful birth deletes the launcher itself (once.mjs:475); a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
+3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:324) erases them. A successful birth deletes the launcher itself (once.mjs:510) unless developer mode is set through `ONCE_*` environment variables; a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
 4. **"Nothing is saved" is not "nothing is retained."** The OS may page memory, Slack and the model provider retain what their products retain. Never describe the program as more private than it is; see README for the exact boundary.
 5. **Speech is the only power that matters.** It influences the team by talking, replying, reacting — a member of the team, not a supervisor. It may notice silence and act on its own timer. Never give it management, surveillance, or intervention powers.
 6. **Mechanics are described literally, never as metaphor.** The action schema is speak (optionally with `reply_to`), react, name, memory, wake. Do not frame anything anthropomorphically ("sleep", "dream", "feel") in prompts or code. If the creature adopts such metaphors, they came from it.
@@ -28,7 +28,7 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - no persistence: `appendFile` / `createWriteStream` / `state.json` / sqlite / redis are forbidden; the only `writeFile` creates the Codex instructions file in the temp room (architecture.test.mjs)
 - voices are stripped of their own harness: Claude `--bare` + replacement system prompt + `--tools ""`; Codex `--sandbox read-only` + `model_instructions_file`; OpenCode `--pure` + a generated tool-denying agent; all receive the prompt on stdin (voice.test.mjs, core.test.mjs)
 - temp room via `mkdtemp('one-presence-')` and removal on exit (architecture.test.mjs)
-- self-deletion happens after `READY`, before `GO` (architecture.test.mjs)
+- self-deletion happens after `READY`, before `GO`, and only outside developer mode, which keeps the launcher (architecture.test.mjs)
 - no automatic restart (architecture.test.mjs)
 - exact identity-free `SEED`; manifest scopes and Socket Mode; action schema and limits (core.test.mjs)
 - event filtering, dedup, memory replacement, in-memory activations, a displayed name chosen once, destruction on death (presence.test.mjs)
@@ -42,12 +42,13 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - `pathCandidates` / `findCommand` / `discoverVoices` (102/110/123) — PATH inspection only, never executes a CLI to discover it; `VOICE_COMMANDS` (117) prefers `opencode-cli` over the desktop `opencode`
 - `run` / `windowsQuote` (141/134) — child execution; human and Slack text always goes over stdin, never interpolated
 - `mindPrompt` / `parseAction` (163/179) — the entire protocol: one bounded JSON action
-- `askVoice` (204) — per-CLI model and invocation flags, each voice stripped of its own agent harness
-- `Presence` (225) — perception, batching, actions, memory, a displayed name chosen once, one timer, death
-- `findNpmCli` / `childMain` (329/344) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
-- `launcherMain` (381) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion
+- `askVoice` (207) — per-CLI model and invocation flags, each voice stripped of its own agent harness
+- `Presence` (228) — perception, batching, actions, memory, a displayed name chosen once, one timer, death
+- `findNpmCli` / `childMain` (332/347) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
+- `voiceLabel` / `readDevConfig` (384/386) — developer mode from `ONCE_VOICE`, `ONCE_BOT_TOKEN`, `ONCE_APP_TOKEN`, `ONCE_CHANNEL`, optional `ONCE_MODEL`
+- `launcherMain` (400) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion (skipped in developer mode, which keeps the launcher)
 
-Timing constants are physics: 2500 ms debounce (263), 5000 ms settle (318), 32 pending events (259), 256 seen ids (247), 64 references (251), 180 s model timeout (221). Tune deliberately; never grow them into queues or history.
+Timing constants are physics: 2500 ms debounce (266), 5000 ms settle (321), 32 pending events (262), 256 seen ids (250), 64 references (254), 180 s model timeout (224). Tune deliberately; never grow them into queues or history.
 
 ## Extending it
 
@@ -56,6 +57,7 @@ Timing constants are physics: 2500 ms debounce (263), 5000 ms settle (318), 32 p
 - Platform branches are deliberately few: Windows `.cmd` execution in `run`, PATHEXT probing in `pathCandidates`. Keep new logic platform-neutral.
 - New action: update `parseAction` schema, `mindPrompt`, `apply`, tests, and the README protocol list. Fields stay optional, bounded, literal.
 - New voice: `discoverVoices` list, `askVoice` branch, and a voice test asserting its invocation and model flags.
+- Developer mode (`ONCE_*` environment variables, usually via `node --env-file=.env once.mjs`) is for local iteration: it skips setup and keeps the launcher, and must change nothing else. It is never the normal path.
 - Slack behavior: update `MANIFEST` plus event filters plus README.
 - The tests mock Slack and the model CLIs. They must keep passing without a workspace or a logged-in CLI.
 

@@ -15,6 +15,7 @@ import {
   mindPrompt,
   parseAction,
   pathCandidates,
+  readDevConfig,
   run,
   windowsQuote,
 } from '../once.mjs';
@@ -129,6 +130,10 @@ test('parseAction constrains emoji syntax', () => {
   assert.throws(() => parseAction('{"react":{"message_id":"1","emoji":"<script>"}}'), /Reaction is invalid/);
 });
 
+test('parseAction strips colons from an emoji name', () => {
+  assert.equal(parseAction('{"react":{"message_id":"1","emoji":":eyes:"}}').react.emoji, 'eyes');
+});
+
 test('bounded trims oldest entries', () => {
   const map = new Map([['a', 1], ['b', 2], ['c', 3]]);
   bounded(map, 2);
@@ -191,6 +196,35 @@ test('findCommand and discoverVoices inspect PATH without invoking commands', as
     process.env.PATHEXT = oldExt;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('readDevConfig ignores an environment without developer variables', () => {
+  assert.equal(readDevConfig({}), null);
+});
+
+test('readDevConfig parses a complete developer environment', () => {
+  const config = readDevConfig({
+    ONCE_VOICE: 'codex',
+    ONCE_MODEL: 'gpt-6.1-sol',
+    ONCE_BOT_TOKEN: 'xoxb-12345678',
+    ONCE_APP_TOKEN: 'xapp-12345678',
+    ONCE_CHANNEL: 'C12345678',
+  });
+  assert.deepEqual(config, {
+    voice: 'codex',
+    model: 'gpt-6.1-sol',
+    botToken: 'xoxb-12345678',
+    appToken: 'xapp-12345678',
+    channel: 'C12345678',
+  });
+});
+
+test('readDevConfig rejects incomplete or malformed developer environments', () => {
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude' }), /Developer mode needs/);
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'vim', ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' }), /ONCE_VOICE/);
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_BOT_TOKEN: 'nope', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' }), /ONCE_BOT_TOKEN/);
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'nope' }), /ONCE_CHANNEL/);
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_MODEL: 'has space', ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' }), /ONCE_MODEL/);
 });
 
 test('run sends arbitrary text over stdin rather than shell interpolation', async () => {

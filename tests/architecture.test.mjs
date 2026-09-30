@@ -40,6 +40,13 @@ test('the launcher deletes itself only after the child reports READY', () => {
   assert.ok(ready >= 0 && deletion > ready && go > deletion);
 });
 
+test('developer mode keeps the launcher', () => {
+  const guard = source.indexOf('if (!dev)');
+  const deletion = source.indexOf('await unlink(HERE)');
+  const go = source.indexOf("child.stdin.write('GO\\n')");
+  assert.ok(guard >= 0 && deletion > guard && go > deletion);
+});
+
 test('the presence has no automatic restart loop', () => {
   assert.doesNotMatch(source, /restart\s*:/i);
   assert.doesNotMatch(source, /while\s*\(\s*true\s*\).*childMain/s);

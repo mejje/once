@@ -171,7 +171,7 @@ ${JSON.stringify(state)}
 Your entire private memory is the value of memory above. Rewrite it only if something should remain with you.
 
 Respond with exactly one JSON object and nothing else. Every field is optional:
-{"speak":"text for the shared Slack channel","reply_to":"heard message id","react":{"message_id":"heard message id","emoji":"emoji_name"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
+{"speak":"text for the shared Slack channel","reply_to":"heard message id","react":{"message_id":"heard message id","emoji":"emoji_name_without_colons"},${nameField}"memory":"your complete replacement memory","wake_in_minutes":30}
 
 wake_in_minutes may also be null to cancel a future activation. Omitting memory or wake_in_minutes keeps each unchanged.${nameNote} An empty object means remaining silent and changing nothing.`;
 }
@@ -196,8 +196,11 @@ function parseAction(text) {
   if ('memory' in action && (typeof action.memory !== 'string' || action.memory.length > 6000)) throw new Error('Memory is invalid.');
   if ('wake_in_minutes' in action && action.wake_in_minutes !== null &&
       (!Number.isFinite(action.wake_in_minutes) || action.wake_in_minutes < 1 || action.wake_in_minutes > 2880)) throw new Error('Activation time is invalid.');
-  if ('react' in action && (!action.react || typeof action.react.message_id !== 'string' ||
-      typeof action.react.emoji !== 'string' || !/^[a-z0-9_+-]{1,80}$/.test(action.react.emoji))) throw new Error('Reaction is invalid.');
+  if ('react' in action) {
+    if (!action.react || typeof action.react.message_id !== 'string' || typeof action.react.emoji !== 'string') throw new Error(`Reaction is invalid: ${JSON.stringify(action.react).slice(0, 120)}`);
+    action.react.emoji = action.react.emoji.replace(/^:+|:+$/g, '');
+    if (!/^[a-z0-9_+-]{1,80}$/.test(action.react.emoji)) throw new Error(`Reaction is invalid: ${action.react.emoji.slice(0, 80)}`);
+  }
   return action;
 }
 
@@ -378,11 +381,32 @@ async function childMain() {
   }
 }
 
+const voiceLabel = name => name === 'claude' ? 'Claude Code' : name === 'codex' ? 'Codex' : 'OpenCode';
+
+function readDevConfig(env) {
+  const required = ['ONCE_VOICE', 'ONCE_BOT_TOKEN', 'ONCE_APP_TOKEN', 'ONCE_CHANNEL'];
+  if (!required.some(key => env[key])) return null;
+  const missing = required.filter(key => !env[key]);
+  if (missing.length) throw new Error(`Developer mode needs ${missing.join(', ')} as well.`);
+  const config = { voice: env.ONCE_VOICE, model: env.ONCE_MODEL ?? '', botToken: env.ONCE_BOT_TOKEN, appToken: env.ONCE_APP_TOKEN, channel: env.ONCE_CHANNEL };
+  if (!['claude', 'codex', 'opencode'].includes(config.voice)) throw new Error('ONCE_VOICE must be claude, codex, or opencode.');
+  if (!/^xoxb-[A-Za-z0-9-]{8,}$/.test(config.botToken)) throw new Error('ONCE_BOT_TOKEN must begin with xoxb-.');
+  if (!/^xapp-[A-Za-z0-9-]{8,}$/.test(config.appToken)) throw new Error('ONCE_APP_TOKEN must begin with xapp-.');
+  if (!/^[CG][A-Z0-9]{7,}$/.test(config.channel)) throw new Error('ONCE_CHANNEL must be a channel ID, not a name or URL.');
+  if (config.model && !/^[A-Za-z0-9._/:-]{1,120}$/.test(config.model)) throw new Error('ONCE_MODEL does not look like a model name or provider/model id.');
+  return config;
+}
+
 async function launcherMain() {
+  const dev = readDevConfig(process.env);
+  const childEnv = { ...process.env, NODE_DISABLE_COMPILE_CACHE: '1' };
+  delete childEnv.ONCE_BOT_TOKEN;
+  delete childEnv.ONCE_APP_TOKEN;
   console.log('\nONE PRESENCE. ONE LIFETIME.\n');
   console.log('This will place a temporary presence in one Slack channel.');
   console.log('Its inner memory will live only in RAM. When this process ends, that inner life is gone.');
   console.log('Slack will still retain the messages that were spoken there.\n');
+  if (dev) console.log('Developer mode: the launcher will be kept after a successful birth.\n');
 
   const npm = await findNpmCli();
   const voices = await discoverVoices();
@@ -392,53 +416,63 @@ async function launcherMain() {
     console.log('Install and sign in to one of those CLIs first, then run this file again.');
     process.exit(1);
   }
-  console.log(`I can hear ${names.map(n => n === 'claude' ? 'Claude Code' : n === 'codex' ? 'Codex' : 'OpenCode').join(', ')} on this computer.`);
-  let voice;
-  if (names.length === 1) {
-    console.log(`I will use ${names[0] === 'claude' ? 'Claude Code' : names[0] === 'codex' ? 'Codex' : 'OpenCode'} as its voice.`);
-    voice = names[0];
+
+  let voice, model, botToken, appToken, channel;
+  if (dev) {
+    if (!names.includes(dev.voice)) {
+      console.log(`I cannot hear ${dev.voice} on this computer; I can hear ${names.map(voiceLabel).join(', ')}.`);
+      process.exit(1);
+    }
+    console.log(`I can hear ${names.map(voiceLabel).join(', ')} on this computer.`);
+    ({ voice, model, botToken, appToken, channel } = dev);
   } else {
-    voice = await askUntil('Which one should it think through? ', v => names.includes(v.toLowerCase()),
-      `Say one of the names I found: ${names.join(', ')}.`).then(v => v.toLowerCase());
-  }
+    console.log(`I can hear ${names.map(voiceLabel).join(', ')} on this computer.`);
+    if (names.length === 1) {
+      console.log(`I will use ${voiceLabel(names[0])} as its voice.`);
+      voice = names[0];
+    } else {
+      voice = await askUntil('Which one should it think through? ', v => names.includes(v.toLowerCase()),
+        `Say one of the names I found: ${names.join(', ')}.`).then(v => v.toLowerCase());
+    }
 
-  const defaultModel = voice === 'claude' ? 'sonnet' : '';
-  const model = await askUntil(
-    defaultModel
-      ? `Which model should it think through? Press Enter for ${defaultModel}, or name one: `
-      : 'Which model should it think through? Press Enter to use the model your CLI is already configured with: ',
-    v => !v || /^[A-Za-z0-9._/:-]{1,120}$/.test(v),
-    'That does not look like a model name, an id, or a provider/model id.',
-    { fallback: defaultModel });
+    const defaultModel = voice === 'claude' ? 'sonnet' : '';
+    model = await askUntil(
+      defaultModel
+        ? `Which model should it think through? Press Enter for ${defaultModel}, or name one: `
+        : 'Which model should it think through? Press Enter to use the model your CLI is already configured with: ',
+      v => !v || /^[A-Za-z0-9._/:-]{1,120}$/.test(v),
+      'That does not look like a model name, an id, or a provider/model id.',
+      { fallback: defaultModel });
 
-  console.log('\nFirst, give it somewhere to be. Open https://api.slack.com/apps in your browser.');
-  console.log('Choose “Create New App”, then “From an app manifest”, and choose the workspace for the hackathon.');
-  console.log('Slack will ask for a manifest. Paste this:\n');
-  console.log(MANIFEST);
-  await prompt('\nWhen Slack has created the app, press Enter here. ');
+    console.log('\nFirst, give it somewhere to be. Open https://api.slack.com/apps in your browser.');
+    console.log('Choose “Create New App”, then “From an app manifest”, and choose the workspace for the hackathon.');
+    console.log('Slack will ask for a manifest. Paste this:\n');
+    console.log(MANIFEST);
+    await prompt('\nWhen Slack has created the app, press Enter here. ');
 
-  console.log('\nIn the Slack app settings, open “Install App” and install it to the workspace.');
-  console.log('Slack will show a Bot User OAuth Token beginning with xoxb-.');
-  const botToken = await askUntil('Paste that token here (it will not be shown): ', v => /^xoxb-[A-Za-z0-9-]{8,}$/.test(v),
-    'That does not look like an xoxb- bot token.', { secret: true });
+    console.log('\nIn the Slack app settings, open “Install App” and install it to the workspace.');
+    console.log('Slack will show a Bot User OAuth Token beginning with xoxb-.');
+    botToken = await askUntil('Paste that token here (it will not be shown): ', v => /^xoxb-[A-Za-z0-9-]{8,}$/.test(v),
+      'That does not look like an xoxb- bot token.', { secret: true });
 
-  console.log('\nNow open “Basic Information”. Under “App-Level Tokens”, generate a token with the connections:write scope.');
-  console.log('Slack will give you an app token beginning with xapp-. This is what lets the program use Socket Mode without a public server.');
-  const appToken = await askUntil('Paste that token here (it will not be shown): ', v => /^xapp-[A-Za-z0-9-]{8,}$/.test(v),
-    'That does not look like an xapp- app token.', { secret: true });
+    console.log('\nNow open “Basic Information”. Under “App-Level Tokens”, generate a token with the connections:write scope.');
+    console.log('Slack will give you an app token beginning with xapp-. This is what lets the program use Socket Mode without a public server.');
+    appToken = await askUntil('Paste that token here (it will not be shown): ', v => /^xapp-[A-Za-z0-9-]{8,}$/.test(v),
+      'That does not look like an xapp- app token.', { secret: true });
 
-  console.log('\nInvite the new app into the Slack channel where it will spend its lifetime.');
-  console.log('Then open the channel details and copy the channel ID. It usually begins with C (public) or G (private).');
-  const channel = await askUntil('What is the channel ID? ', v => /^[CG][A-Z0-9]{7,}$/.test(v),
-    'I need the channel ID rather than its name or URL.');
+    console.log('\nInvite the new app into the Slack channel where it will spend its lifetime.');
+    console.log('Then open the channel details and copy the channel ID. It usually begins with C (public) or G (private).');
+    channel = await askUntil('What is the channel ID? ', v => /^[CG][A-Z0-9]{7,}$/.test(v),
+      'I need the channel ID rather than its name or URL.');
 
-  console.log(`\nIt will think through ${model || 'your configured model'} on your existing ${voice === 'claude' ? 'Claude Code' : voice === 'codex' ? 'Codex' : 'OpenCode'} login.`);
-  console.log('No model API token will be requested by this program.');
-  console.log('It will hear only new messages that arrive after it begins; it will not fetch the channel’s past.');
-  const consent = (await prompt('\nWhen you are ready to let it begin, type “begin”: ')).trim().toLowerCase();
-  if (consent !== 'begin') {
-    console.log('\nNothing began. This file remains where it is.');
-    return;
+    console.log(`\nIt will think through ${model || 'your configured model'} on your existing ${voiceLabel(voice)} login.`);
+    console.log('No model API token will be requested by this program.');
+    console.log('It will hear only new messages that arrive after it begins; it will not fetch the channel’s past.');
+    const consent = (await prompt('\nWhen you are ready to let it begin, type “begin”: ')).trim().toLowerCase();
+    if (consent !== 'begin') {
+      console.log('\nNothing began. This file remains where it is.');
+      return;
+    }
   }
 
   const root = await mkdtemp(path.join(tmpdir(), 'one-presence-'));
@@ -452,11 +486,11 @@ async function launcherMain() {
     console.log('\nPreparing a temporary room…');
     await run(process.execPath, [npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--loglevel=error',
       '--global=false', '--update-notifier=false', `--prefix=${root}`, '--fetch-retries=0', '--fetch-timeout=60000', '@slack/bolt@latest'],
-      { cwd: root, timeout: 120000, env: { ...process.env, NODE_DISABLE_COMPILE_CACHE: '1' } });
+      { cwd: root, timeout: 120000, env: childEnv });
 
     const child = spawn(process.execPath, [childFile], {
       cwd: root, shell: false, windowsHide: true,
-      env: { ...process.env, ONCE_PRESENCE_CHILD: '1', NODE_DISABLE_COMPILE_CACHE: '1' },
+      env: { ...childEnv, ONCE_PRESENCE_CHILD: '1' },
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     child.stdin.on('error', () => {});
@@ -472,15 +506,19 @@ async function launcherMain() {
       throw new Error('It could not begin. The launcher has been kept so you can try again.');
     }
 
-    try { await unlink(HERE); }
-    catch (e) {
-      child.stdin.end('STOP\n'); child.kill();
-      throw new Error(`Everything was ready, but I could not delete this launcher: ${cleanError(e)}`);
+    if (!dev) {
+      try { await unlink(HERE); }
+      catch (e) {
+        child.stdin.end('STOP\n'); child.kill();
+        throw new Error(`Everything was ready, but I could not delete this launcher: ${cleanError(e)}`);
+      }
     }
 
     child.stdin.write('GO\n');
     console.log('\nIt is here.');
-    console.log('This launcher has deleted itself. Nothing of its private memory is being saved.\n');
+    console.log(dev
+      ? 'This launcher was kept. Nothing of its private memory is being saved.\n'
+      : 'This launcher has deleted itself. Nothing of its private memory is being saved.\n');
     await new Promise(resolve => process.once('SIGINT', resolve));
     child.stdin.end('STOP\n');
     await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(4000)]);
@@ -504,6 +542,7 @@ export {
   mindPrompt,
   parseAction,
   pathCandidates,
+  readDevConfig,
   run,
   windowsQuote,
 };

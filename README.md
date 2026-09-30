@@ -32,6 +32,8 @@ This program is not a bot, an assistant, a manager, or a monitor. It is a presen
 ## What is in this repository
 
 ```text
+.gitignore
+.env.example
 README.md
 AGENTS.md
 once.mjs
@@ -108,6 +110,19 @@ The self-deletion happens only after Slack is reachable and the initial model in
 A successful birth deletes the exact `once.mjs` file you launched.
 
 If you want another one later, you'll have to find it again. A newly launched one is a new presence; nothing of the previous private state can be restored.
+
+## For development
+
+Setup can be supplied through environment variables instead of the questions, using a local `.env` file:
+
+1. copy `.env.example` to `.env` and fill it in
+2. run:
+
+```sh
+node --env-file=.env once.mjs
+```
+
+When those variables are present, the launcher skips the setup and keeps itself after a successful birth; the temporary room is still removed on exit. `ONCE_MODEL` is optional, the rest are required. Secrets stay out of the command line and shell history.
 
 ## During its lifetime
 
