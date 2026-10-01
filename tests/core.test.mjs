@@ -233,6 +233,23 @@ test('findCommand and discoverVoices inspect PATH without invoking commands', as
   }
 });
 
+test('discoverVoices hears Azure AI Foundry only with an https endpoint and a key', async () => {
+  const old = process.env.PATH;
+  process.env.PATH = '';
+  try {
+    const key = { AZURE_FOUNDRY_API_KEY: 'k' };
+    assert.equal((await discoverVoices({ ...key, AZURE_FOUNDRY_ENDPOINT: 'https://x.cognitiveservices.azure.com/' })).foundry,
+      'https://x.cognitiveservices.azure.com/openai/v1/chat/completions');
+    assert.equal((await discoverVoices({ ...key, AZURE_FOUNDRY_ENDPOINT: 'https://x.cognitiveservices.azure.com/openai/v1/' })).foundry,
+      'https://x.cognitiveservices.azure.com/openai/v1/chat/completions');
+    assert.equal((await discoverVoices({ ...key, AZURE_FOUNDRY_ENDPOINT: 'http://x.cognitiveservices.azure.com/' })).foundry, undefined);
+    assert.equal((await discoverVoices({ ...key, AZURE_FOUNDRY_ENDPOINT: 'not a url' })).foundry, undefined);
+    assert.equal((await discoverVoices({ AZURE_FOUNDRY_ENDPOINT: 'https://x.cognitiveservices.azure.com/' })).foundry, undefined);
+  } finally {
+    process.env.PATH = old;
+  }
+});
+
 test('readDevConfig ignores an environment without developer variables', () => {
   assert.equal(readDevConfig({}), null);
 });
@@ -260,6 +277,12 @@ test('readDevConfig rejects incomplete or malformed developer environments', () 
   assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_BOT_TOKEN: 'nope', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' }), /ONCE_BOT_TOKEN/);
   assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'nope' }), /ONCE_CHANNEL/);
   assert.throws(() => readDevConfig({ ONCE_VOICE: 'claude', ONCE_MODEL: 'has space', ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' }), /ONCE_MODEL/);
+});
+
+test('readDevConfig requires a deployment for Azure AI Foundry', () => {
+  const slack = { ONCE_BOT_TOKEN: 'xoxb-12345678', ONCE_APP_TOKEN: 'xapp-12345678', ONCE_CHANNEL: 'C12345678' };
+  assert.throws(() => readDevConfig({ ONCE_VOICE: 'foundry', ...slack }), /ONCE_MODEL must name the Azure AI Foundry deployment/);
+  assert.equal(readDevConfig({ ONCE_VOICE: 'foundry', ONCE_MODEL: 'DeepSeek-V4.1-Flash', ...slack }).model, 'DeepSeek-V4.1-Flash');
 });
 
 test('run sends arbitrary text over stdin rather than shell interpolation', async () => {

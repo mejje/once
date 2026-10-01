@@ -16,6 +16,7 @@ test('the model side has no arbitrary browsing or shell tool surface', () => {
   assert.match(source, /--sandbox', 'read-only'/);
   assert.match(source, /'--pure', 'run', '--agent', 'once'/);
   assert.match(source, /permission: Object\.fromEntries/);
+  assert.match(source, /JSON\.stringify\(\{ model: config\.model, messages: \[\{ role: 'system', content: VOICE_INSTRUCTIONS \}, \{ role: 'user', content: message \}\] \}\)/);
   assert.doesNotMatch(source, /https?:\/\/[^'"`\s]+.*incoming/);
 });
 

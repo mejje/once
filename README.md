@@ -57,9 +57,12 @@ There is no application database, state file, model API key, daemon, Docker cont
   - `claude`
   - `codex`
   - `opencode-cli` or `opencode` (the CLI is preferred when the desktop UI is also installed)
+- or an Azure AI Foundry deployment, with these already set in the environment:
+  - `AZURE_FOUNDRY_ENDPOINT`, the resource endpoint, e.g. `https://<resource>.cognitiveservices.azure.com/`
+  - `AZURE_FOUNDRY_API_KEY`, a key for that resource
 - permission to create/install a Slack app in the workspace
 
-The model side uses your existing CLI login. `once` does **not** ask for a model API key.
+The model side uses your existing CLI login, or the Foundry key you set up yourself. `once` does **not** ask for, print, or save a model API key.
 
 Slack itself still needs Slack credentials. The interactive setup explains how to create them:
 
@@ -90,9 +93,9 @@ There are no command-line options and no numbered menus.
 
 The launcher talks you through the setup in plain language. It will:
 
-1. discover `claude`, `codex`, and the OpenCode CLI (`opencode-cli`, falling back to `opencode`) on your `PATH`
-2. ask which available CLI it should think through if there is more than one
-3. ask which model it should think through (press Enter to use the CLI's configured model; Claude offers `sonnet` as its default)
+1. discover `claude`, `codex`, and the OpenCode CLI (`opencode-cli`, falling back to `opencode`) on your `PATH`, and Azure AI Foundry when its endpoint and key are in the environment
+2. ask which available voice it should think through if there is more than one
+3. ask which model it should think through (press Enter to use the CLI's configured model; Claude offers `sonnet` as its default; Foundry needs the deployment name, such as `DeepSeek-V4.1-Flash`)
 4. explain how to create a Slack app from the manifest it prints
 5. wait while you install that app into the workspace
 6. privately ask for the Slack `xoxb-` bot token
@@ -122,7 +125,7 @@ Setup can be supplied through environment variables instead of the questions, us
 node --env-file=.env once.mjs
 ```
 
-When those variables are present, the launcher skips the setup and keeps itself after a successful birth; the temporary room is still removed on exit. `ONCE_MODEL` is optional, the rest are required. Secrets stay out of the command line and shell history.
+When those variables are present, the launcher skips the setup and keeps itself after a successful birth; the temporary room is still removed on exit. `ONCE_MODEL` is optional except for `ONCE_VOICE=foundry`, where it names the deployment; the rest are required. Secrets stay out of the command line and shell history.
 
 ## During its lifetime
 
@@ -156,10 +159,11 @@ The local model CLI is invoked non-interactively with its own agent harness stri
 - Claude Code runs bare, with its system prompt replaced by one literal protocol sentence, no built-in tools, and no session persistence.
 - Codex runs in a read-only sandbox with its built-in instructions replaced by a one-line protocol file.
 - OpenCode runs with its plugins disabled and a generated agent that denies every tool.
+- Azure AI Foundry has no agent harness at all. Each activation is one HTTPS chat completions request to the deployment, holding only the protocol sentence and the prompt, with no tools. It uses the OpenAI v1 chat completions API, so it suits the deployments that API serves (DeepSeek, GPT and similar). Claude deployments on Foundry go through Claude Code instead.
 
 That protocol file for Codex lives in the temporary room, contains no private state, and is removed with the room. The presence itself exposes no filesystem or shell action in its output protocol.
 
-The chosen model, if any, is passed to the CLI on every invocation; otherwise the CLI's own configured model is used.
+The chosen model, if any, is passed to the CLI on every invocation; otherwise the CLI's own configured model is used. For Azure AI Foundry the chosen deployment is always sent.
 
 ## End
 
@@ -194,6 +198,7 @@ The suite covers:
 - CLI discovery
 - stdin-safe local CLI invocation
 - harness-stripped invocation of Claude Code, Codex, and OpenCode
+- the tool-free Azure AI Foundry request and its endpoint discovery
 - Slack event filtering and deduplication
 - hearing messages and reactions
 - speaking, replying, reacting, and choosing its displayed name
@@ -223,9 +228,9 @@ Slack events
 | one timer         |
 +---------+---------+
           |
-          | stdin
-          v
-  claude / codex / opencode
+          | stdin                 | https
+          v                       v
+  claude / codex / opencode   Azure AI Foundry
           |
           v
     constrained action

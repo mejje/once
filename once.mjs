@@ -6,7 +6,8 @@
  *   node once.mjs
  *
  * This file explains its own Slack setup, discovers an already-authenticated
- * Claude Code, Codex, or OpenCode CLI, and asks everything interactively.
+ * Claude Code, Codex, or OpenCode CLI, or an Azure AI Foundry endpoint whose
+ * key is already set in the environment, and asks everything interactively.
  *
  * The creature's memory and intentions exist only in RAM. It does not fetch
  * old Slack history and it writes no application state. After a successful
@@ -121,7 +122,16 @@ const VOICE_COMMANDS = {
   opencode: ['opencode-cli', 'opencode'],
 };
 
-async function discoverVoices() {
+function foundryEndpoint(value) {
+  // The resource endpoint as Azure AI Foundry shows it; requests go to its OpenAI v1 chat completions.
+  let url;
+  try { url = new URL(value); } catch { return null; }
+  if (url.protocol !== 'https:') return null;
+  const base = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '').replace(/\/openai\/v1$/, '');
+  return `${url.origin}${base}/openai/v1/chat/completions`;
+}
+
+async function discoverVoices(env = process.env) {
   const found = {};
   for (const [voice, candidates] of Object.entries(VOICE_COMMANDS)) {
     for (const name of candidates) {
@@ -129,6 +139,8 @@ async function discoverVoices() {
       if (command) { found[voice] = command; break; }
     }
   }
+  const endpoint = env.AZURE_FOUNDRY_API_KEY && foundryEndpoint(env.AZURE_FOUNDRY_ENDPOINT);
+  if (endpoint) found.foundry = endpoint;
   return found;
 }
 
@@ -213,8 +225,26 @@ function parseAction(text) {
   return action;
 }
 
-async function askVoice(config, state, runner = run) {
+async function askFoundry(config, message, request) {
+  const response = await request(config.voiceCommand, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'api-key': process.env.AZURE_FOUNDRY_API_KEY ?? '' },
+    body: JSON.stringify({ model: config.model, messages: [{ role: 'system', content: VOICE_INSTRUCTIONS }, { role: 'user', content: message }] }),
+    signal: AbortSignal.timeout(180000),
+  });
+  const text = await response.text();
+  if (text.length > 200000) throw new Error('Azure AI Foundry answered with too much text.');
+  let body = {};
+  try { body = JSON.parse(text); } catch {}
+  if (!response.ok) throw new Error(`Azure AI Foundry answered ${response.status}: ${body.error?.message ?? text.trim()}`);
+  const content = body.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') throw new Error(`Azure AI Foundry returned no message: ${text.trim()}`);
+  return content;
+}
+
+async function askVoice(config, state, runner = run, request = fetch) {
   const message = mindPrompt(state);
+  if (config.voice === 'foundry') return parseAction(await askFoundry(config, message, request));
   let args, env = process.env;
   if (config.voice === 'claude') {
     args = ['-p', 'Respond only with the JSON action described by the input.', '--output-format', 'text',
@@ -399,7 +429,7 @@ async function childMain() {
   }
 }
 
-const voiceLabel = name => name === 'claude' ? 'Claude Code' : name === 'codex' ? 'Codex' : 'OpenCode';
+const voiceLabel = name => name === 'claude' ? 'Claude Code' : name === 'codex' ? 'Codex' : name === 'foundry' ? 'Azure AI Foundry' : 'OpenCode';
 
 function readDevConfig(env) {
   const required = ['ONCE_VOICE', 'ONCE_BOT_TOKEN', 'ONCE_APP_TOKEN', 'ONCE_CHANNEL'];
@@ -407,7 +437,8 @@ function readDevConfig(env) {
   const missing = required.filter(key => !env[key]);
   if (missing.length) throw new Error(`Developer mode needs ${missing.join(', ')} as well.`);
   const config = { voice: env.ONCE_VOICE, model: env.ONCE_MODEL ?? '', botToken: env.ONCE_BOT_TOKEN, appToken: env.ONCE_APP_TOKEN, channel: env.ONCE_CHANNEL };
-  if (!['claude', 'codex', 'opencode'].includes(config.voice)) throw new Error('ONCE_VOICE must be claude, codex, or opencode.');
+  if (!['claude', 'codex', 'opencode', 'foundry'].includes(config.voice)) throw new Error('ONCE_VOICE must be claude, codex, opencode, or foundry.');
+  if (config.voice === 'foundry' && !config.model) throw new Error('ONCE_MODEL must name the Azure AI Foundry deployment.');
   if (!/^xoxb-[A-Za-z0-9-]{8,}$/.test(config.botToken)) throw new Error('ONCE_BOT_TOKEN must begin with xoxb-.');
   if (!/^xapp-[A-Za-z0-9-]{8,}$/.test(config.appToken)) throw new Error('ONCE_APP_TOKEN must begin with xapp-.');
   if (!/^[CG][A-Z0-9]{7,}$/.test(config.channel)) throw new Error('ONCE_CHANNEL must be a channel ID, not a name or URL.');
@@ -430,8 +461,8 @@ async function launcherMain() {
   const voices = await discoverVoices();
   const names = Object.keys(voices);
   if (!names.length) {
-    console.log('I cannot yet find Claude Code, Codex, or OpenCode on this computer.');
-    console.log('Install and sign in to one of those CLIs first, then run this file again.');
+    console.log('I cannot yet find Claude Code, Codex, OpenCode, or an Azure AI Foundry endpoint on this computer.');
+    console.log('Install and sign in to one of those CLIs, or set AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_API_KEY, then run this file again.');
     process.exit(1);
   }
 
@@ -455,11 +486,15 @@ async function launcherMain() {
 
     const defaultModel = voice === 'claude' ? 'sonnet' : '';
     model = await askUntil(
-      defaultModel
-        ? `Which model should it think through? Press Enter for ${defaultModel}, or name one: `
-        : 'Which model should it think through? Press Enter to use the model your CLI is already configured with: ',
-      v => !v || /^[A-Za-z0-9._/:-]{1,120}$/.test(v),
-      'That does not look like a model name, an id, or a provider/model id.',
+      voice === 'foundry'
+        ? 'Which Azure AI Foundry deployment should it think through? '
+        : defaultModel
+          ? `Which model should it think through? Press Enter for ${defaultModel}, or name one: `
+          : 'Which model should it think through? Press Enter to use the model your CLI is already configured with: ',
+      v => (v ? /^[A-Za-z0-9._/:-]{1,120}$/.test(v) : voice !== 'foundry'),
+      voice === 'foundry'
+        ? 'Name the deployment as Azure AI Foundry shows it.'
+        : 'That does not look like a model name, an id, or a provider/model id.',
       { fallback: defaultModel });
 
     console.log('\nFirst, give it somewhere to be. Open https://api.slack.com/apps in your browser.');
@@ -483,7 +518,9 @@ async function launcherMain() {
     channel = await askUntil('What is the channel ID? ', v => /^[CG][A-Z0-9]{7,}$/.test(v),
       'I need the channel ID rather than its name or URL.');
 
-    console.log(`\nIt will think through ${model || 'your configured model'} on your existing ${voiceLabel(voice)} login.`);
+    console.log(voice === 'foundry'
+      ? `\nIt will think through the ${model} deployment at ${new URL(voices.foundry).host}, with the key already set in your environment.`
+      : `\nIt will think through ${model || 'your configured model'} on your existing ${voiceLabel(voice)} login.`);
     console.log('No model API token will be requested by this program.');
     console.log('It will hear only new messages that arrive after it begins; it will not fetch the channel’s past.');
     const consent = (await prompt('\nWhen you are ready to let it begin, type “begin”: ')).trim().toLowerCase();
