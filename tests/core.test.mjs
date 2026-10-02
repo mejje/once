@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
 import {
   SEED,
@@ -12,6 +13,7 @@ import {
   cleanError,
   discoverVoices,
   findCommand,
+  keepConnected,
   mindPrompt,
   parseAction,
   pathCandidates,
@@ -248,6 +250,44 @@ test('discoverVoices hears Azure AI Foundry only with an https endpoint and a ke
   } finally {
     process.env.PATH = old;
   }
+});
+
+test('keepConnected reconnects to Slack until it succeeds, backing off to a minute', async () => {
+  const socket = new EventEmitter();
+  let attempts = 0;
+  socket.start = async () => { attempts += 1; if (attempts < 9) throw new Error('fetch failed'); };
+  const waits = [];
+  const wait = async ms => { waits.push(ms); };
+  const oldError = console.error;
+  console.error = () => {};
+  try {
+    keepConnected(socket, () => true, wait);
+    socket.emit('disconnected');
+    socket.emit('disconnected');
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    console.error = oldError;
+  }
+  assert.equal(attempts, 9);
+  assert.deepEqual(waits, [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000]);
+});
+
+test('keepConnected stops trying once the presence is leaving', async () => {
+  const socket = new EventEmitter();
+  let attempts = 0, staying = true;
+  socket.start = async () => { attempts += 1; staying = false; throw new Error('fetch failed'); };
+  const oldError = console.error;
+  console.error = () => {};
+  try {
+    keepConnected(socket, () => staying, async () => {});
+    socket.emit('disconnected');
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    console.error = oldError;
+  }
+  assert.equal(attempts, 1);
+  keepConnected(socket, () => false, async () => { throw new Error('should not wait'); });
+  socket.emit('disconnected');
 });
 
 test('readDevConfig ignores an environment without developer variables', () => {

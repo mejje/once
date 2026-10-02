@@ -171,6 +171,8 @@ When the process ends, it clears its in-memory state and removes the temporary p
 
 There is no automatic restart.
 
+Losing the network is not death. When Slack's connection drops, the same process keeps reconnecting, waiting from one second up to a minute between attempts, for as long as it lives; its memory and timer stay as they were. What is said in the channel while it is disconnected may not reach it.
+
 If the process crashes, the machine restarts, or the terminal is forcibly killed, the presence is dead. A hard termination can leave temporary program/dependency files in the operating system temp directory, but there is no serialized private memory to resume.
 
 ## What “nothing is saved” means
@@ -207,7 +209,8 @@ The suite covers:
 - destruction of private state on death
 - no Slack history fetch
 - no application state/database persistence
-- temporary-room cleanup
+- temporary-room cleanup, including when the presence ends on its own
+- reconnecting to Slack after network loss
 - self-deletion ordering
 - absence of an automatic restart loop
 - import safety for the implementation under test

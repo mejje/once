@@ -48,6 +48,16 @@ test('developer mode keeps the launcher', () => {
   assert.ok(guard >= 0 && deletion > guard && go > deletion);
 });
 
+test('the child owns Slack reconnection and survives stray rejections', () => {
+  assert.match(source, /new SocketModeReceiver\(\{ appToken: config\.appToken, logger: quiet, autoReconnectEnabled: false \}\)/);
+  assert.match(source, /keepConnected\(receiver\.client, \(\) => !leaving\)/);
+  assert.match(source, /process\.on\('unhandledRejection'/);
+});
+
+test('the launcher cleans up when the child ends on its own', () => {
+  assert.match(source, /await Promise\.race\(\[new Promise\(resolve => process\.once\('SIGINT', resolve\)\), exited\]\)/);
+});
+
 test('the presence has no automatic restart loop', () => {
   assert.doesNotMatch(source, /restart\s*:/i);
   assert.doesNotMatch(source, /while\s*\(\s*true\s*\).*childMain/s);

@@ -14,7 +14,7 @@ Keep these true. They are the piece, not implementation details.
 
 1. **No identity is given.** `SEED` (once.mjs:30) is the entire initial self-conception and must stay minimal. Never add a name, species, personality, tone instructions, backstory, or "do not" rules. Any identity must emerge from what the presence says and remembers. `VOICE_INSTRUCTIONS` (once.mjs:67) is literal protocol text, never identity; `tests/core.test.mjs` asserts both are exact and identity-free.
 2. **It knows only what reaches it.** Never fetch Slack history, never inspect repositories, CI, GitHub, or the filesystem, never browse. Its universe is: new Slack events, time, its own memory, its own source. What it knows about the work, it was told.
-3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:372) erases them. A successful birth deletes the launcher itself (once.mjs:565) unless developer mode is set through `ONCE_*` environment variables; a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
+3. **RAM only, one lifetime.** No state file, database, transcript cache, or recovery. `Presence` holds memory/pending/wakeAt in memory; `die()` (once.mjs:372) erases them. A successful birth deletes the launcher itself (once.mjs:586) unless developer mode is set through `ONCE_*` environment variables; a normal death removes the temp room; there is no restart loop. This is the artwork, not a limitation to fix.
 4. **"Nothing is saved" is not "nothing is retained."** The OS may page memory, Slack and the model provider retain what their products retain. Never describe the program as more private than it is; see README for the exact boundary.
 5. **Speech is the only power that matters.** It influences the team by talking, replying, reacting — a member of the team, not a supervisor. It may notice silence and act on its own timer. Never give it management, surveillance, or intervention powers.
 6. **Mechanics are described literally, never as metaphor.** The action schema is speak (optionally with `reply_to`), react, name, memory, wake. Do not frame anything anthropomorphically ("sleep", "dream", "feel") in prompts or code. If the creature adopts such metaphors, they came from it.
@@ -31,6 +31,7 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - temp room via `mkdtemp('one-presence-')` and removal on exit (architecture.test.mjs)
 - self-deletion happens after `READY`, before `GO`, and only outside developer mode, which keeps the launcher (architecture.test.mjs)
 - no automatic restart (architecture.test.mjs)
+- the living process stays alive through network loss: the child owns Slack reconnection (`autoReconnectEnabled: false` plus `keepConnected`, backing off from 1 s to a minute, forever) and logs stray promise rejections instead of dying; the launcher notices a child that ends on its own and still removes the temp room (core.test.mjs, architecture.test.mjs)
 - exact identity-free `SEED`; manifest scopes and Socket Mode; action schema and limits (core.test.mjs)
 - event filtering, dedup, memory replacement, in-memory activations, a displayed name available only after ten sent messages and chosen once, destruction on death (presence.test.mjs)
 - replies only continue an existing thread; top-level speech never starts one (presence.test.mjs)
@@ -48,9 +49,9 @@ Do not weaken or delete these tests to make a change pass. If a change deliberat
 - `mindPrompt` / `parseAction` (176/193) — the entire protocol: one bounded JSON action, with the rejection echoed on a retry
 - `askFoundry` / `askVoice` (228/245) — per-voice model and invocation, each CLI voice stripped of its own agent harness; Foundry is one chat completions request
 - `Presence` (267) — perception, batching, actions, memory, a displayed name offered after ten sent messages, one timer, death
-- `findNpmCli` / `childMain` (380/395) — child side: Slack connection, `READY` / `GO` / `STOP` handshake
-- `voiceLabel` / `readDevConfig` (432/434) — developer mode from `ONCE_VOICE`, `ONCE_BOT_TOKEN`, `ONCE_APP_TOKEN`, `ONCE_CHANNEL`, optional `ONCE_MODEL` (required for `foundry`)
-- `launcherMain` (449) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion (skipped in developer mode, which keeps the launcher)
+- `findNpmCli` / `keepConnected` / `childMain` (380/395/411) — child side: Slack connection and its reconnection, `READY` / `GO` / `STOP` handshake
+- `voiceLabel` / `readDevConfig` (452/454) — developer mode from `ONCE_VOICE`, `ONCE_BOT_TOKEN`, `ONCE_APP_TOKEN`, `ONCE_CHANNEL`, optional `ONCE_MODEL` (required for `foundry`)
+- `launcherMain` (469) — the ritual: voice and model selection, Slack onboarding, temp room, self-deletion (skipped in developer mode, which keeps the launcher)
 
 Timing constants are physics: 2500 ms debounce (306), 5000 ms settle (369), 32 pending events (302), 256 seen ids (290), 64 references (294), 180 s model timeout (233, 263). Tune deliberately; never grow them into queues or history.
 
@@ -73,7 +74,7 @@ Each of these was explored at length before being refused. They will look like i
 - **Self-modification, Git, versioned selves.** It turns a participant into a system observed from outside. This creature becomes different; it does not keep an archaeological record of every prior self.
 - **GitHub / CI / repository awareness.** Monitoring would replace asking. If it quietly works for 90 minutes, the presence genuinely cannot know whether that was progress, a detour, or a nap — so its only honest move is to ask. Its picture of the work is socially constructed by the room.
 - **Slack history fetching.** It hears only what arrives while it is alive; the past is not evidence it can consult.
-- **Persistent state, transcripts, recovery, restart.** One process, one lifetime. Death must be real for the piece to work.
+- **Persistent state, transcripts, recovery, restart.** One process, one lifetime. Death must be real for the piece to work. Reconnecting the same living process to Slack is not recovery: nothing is restored, because nothing was lost.
 - **Identity: names, species, tone rules, presets, "do not" rules.** Pre-authoring a character leaves nothing for the presence to become.
 - **API keys, menus, SETUP.md, OS schedulers, web servers, dashboards.** It thinks through an existing CLI login, sets itself up by talking, and carries time as an in-memory timer. The one exception is Azure AI Foundry, which reads a key the person has already put in the environment; the program still never asks for, prints, or saves a key.
 - **Plugin systems, analytics.** A presence that only speaks needs neither.

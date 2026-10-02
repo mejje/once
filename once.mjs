@@ -392,20 +392,40 @@ async function findNpmCli() {
   throw new Error('I can find Node.js, but not npm. Install a normal Node.js distribution that includes npm.');
 }
 
+function keepConnected(socket, staying, wait = sleep) {
+  // Slack drops Socket Mode connections on refreshes and network loss. The same process reconnects for as long as it lives.
+  let reconnecting = false;
+  socket.on('disconnected', async () => {
+    if (reconnecting || !staying()) return;
+    reconnecting = true;
+    for (let delay = 1000; staying(); delay = Math.min(delay * 2, 60000)) {
+      await wait(delay);
+      if (!staying()) break;
+      try { await socket.start(); break; }
+      catch (e) { console.error(`Slack connection failed, trying again: ${cleanError(e)}`); }
+    }
+    reconnecting = false;
+  });
+}
+
 async function childMain() {
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const first = await new Promise(resolve => rl.once('line', resolve));
   const config = JSON.parse(first);
   const quiet = { debug() {}, info() {}, warn() {}, error() {}, setLevel() {}, getLevel() { return 'error'; }, setName() {} };
-  let app, presence;
+  let app, presence, leaving = false;
   const finish = async code => {
+    leaving = true;
     presence?.die();
     try { await app?.stop(); } catch {}
     process.exit(code);
   };
+  process.on('unhandledRejection', e => console.error(`Unhandled: ${cleanError(e)}`));
   try {
-    const { App } = await import('@slack/bolt');
-    app = new App({ token: config.botToken, appToken: config.appToken, socketMode: true, logger: quiet,
+    const { App, SocketModeReceiver } = await import('@slack/bolt');
+    const receiver = new SocketModeReceiver({ appToken: config.appToken, logger: quiet, autoReconnectEnabled: false });
+    keepConnected(receiver.client, () => !leaving);
+    app = new App({ token: config.botToken, receiver, logger: quiet,
       clientOptions: { timeout: 20000, retryConfig: { retries: 0 } } });
     const auth = await app.client.auth.test();
     config.botUser = auth.user_id;
@@ -549,11 +569,12 @@ async function launcherMain() {
       stdio: ['pipe', 'pipe', 'inherit'],
     });
     child.stdin.on('error', () => {});
+    const exited = new Promise(resolve => child.once('exit', resolve));
     child.stdin.write(JSON.stringify({ botToken, appToken, channel, voice, voiceCommand: voices[voice], emptyCwd, instructionsFile, model }) + '\n');
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     const ready = await Promise.race([
       new Promise(resolve => lines.on('line', line => { if (line === 'READY') resolve(true); })),
-      new Promise(resolve => child.once('exit', () => resolve(false))),
+      exited.then(() => false),
       sleep(240000).then(() => false),
     ]);
     if (!ready) {
@@ -574,10 +595,13 @@ async function launcherMain() {
     console.log(dev
       ? 'This launcher was kept. Nothing of its private memory is being saved.\n'
       : 'This launcher has deleted itself. Nothing of its private memory is being saved.\n');
-    await new Promise(resolve => process.once('SIGINT', resolve));
-    child.stdin.end('STOP\n');
-    await Promise.race([new Promise(resolve => child.once('exit', resolve)), sleep(4000)]);
-    if (child.exitCode === null) child.kill();
+    await Promise.race([new Promise(resolve => process.once('SIGINT', resolve)), exited]);
+    const running = () => child.exitCode === null && child.signalCode === null;
+    if (running()) {
+      child.stdin.end('STOP\n');
+      await Promise.race([exited, sleep(4000)]);
+      if (running()) child.kill();
+    }
     console.log('\nIt is gone.');
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
@@ -594,6 +618,7 @@ export {
   cleanError,
   discoverVoices,
   findCommand,
+  keepConnected,
   mindPrompt,
   parseAction,
   pathCandidates,
